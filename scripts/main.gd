@@ -3656,7 +3656,6 @@ func _process(delta: float) -> void:
 	if not chute_queue.is_empty() or chal_on:
 		_update_chute(delta)
 	_update_sweep()
-	_right_words(delta)
 	_update_tut(delta)
 	_tick("misc")
 	_update_functions()
@@ -6480,7 +6479,7 @@ func _self_test() -> void:
 	var fd: Tile = loose.filter(func(x): return is_instance_valid(x) and x.key == "puer").back()
 	fd.loose_body.global_transform = Transform3D(Basis(Vector3.RIGHT, PI), TRAY_POS + Vector3(-0.15, 0.06, -0.3))
 	await get_tree().create_timer(2.5).timeout
-	print("T59 face-down puer rolled face up: ", fd.loose_body.global_basis.y.dot(Vector3.UP) > 0.8,
+	print("T59 face-down puer left as it lies (no flipping itself over): ", fd.loose_body.global_basis.y.dot(Vector3.UP) < -0.8,
 			"   board colours: puer ", Tile.color_for("stem", "puer", "").to_html(false), " puella ", Tile.color_for("stem", "puell", "").to_html(false), " pōculum ", Tile.color_for("stem", "pocul", "").to_html(false))
 	# an adjective's plug pulled out of the top of a noun stays out (it used to drop straight back in)
 	var pu6 := _new_chunk([_new_tile("stem", "puer")], Vector3(-0.3, TABLE_Y, -0.1))
