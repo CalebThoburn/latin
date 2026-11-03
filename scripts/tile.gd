@@ -95,6 +95,7 @@ var cords_out: Array = [] # the Cord nodes, in cord_specs order (cord == cords_o
 # more holes besides socket_* (socket 0): verbs' star holes for adverbs / prepositions
 var extra_sockets: Array = [] # [{kind, local, basis, prongs}]
 var soldered := false
+var broken := false # (career mode: a mistake broke it: it's no good for anything but the bin)
 var lock_cap: Node3D = null # covers an ending that isn't unlocked yet (campaign) # delivered as a whole word: its ending is soldered on for good
 # adapter cables from the bins: little pucks that change what a hole / plug does
 #   modi    - triangle (ablative) in, star out: an ablative goes straight into a verb
@@ -882,6 +883,37 @@ func _layout_reel() -> void:
 		if not Latin.ending_unlocked(cat, Latin.reel_form(reel_base, reel_opts[i])): # not unlocked yet: not on the drum
 			rl.visible = false
 		rl.modulate = c
+
+
+## Broken by a mistake: scorched, cracked, its writing gone grey. It won't go on
+## anything, and nothing plugs into it.
+func set_broken() -> void:
+	if broken:
+		return
+	broken = true
+	var h := box_half()
+	var o := shape_offset()
+	var top := o.y + h.y + 0.0015
+	var soot := Color("#1d1b1f")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = get_instance_id()
+	for k in 3: # cracks across the top, zigzagging
+		var x0 := rng.randf_range(-h.x * 0.7, h.x * 0.7)
+		var z := -h.z * 0.8
+		for seg in 4:
+			var dz := h.z * 0.42
+			var dx := rng.randf_range(-0.012, 0.012)
+			var crack := Art.box(self, Vector3(0.0025, 0.0012, dz * 1.15), o + Vector3(x0 + dx * 0.5, top - o.y, z + dz * 0.5), soot, -1)
+			crack.rotation.y = atan2(dx, dz)
+			x0 += dx
+			z += dz
+	for k in 5: # scorch marks
+		var r := rng.randf_range(0.006, 0.014)
+		Art.box(self, Vector3(r * 2.0, 0.0011, r * 1.6), o + Vector3(rng.randf_range(-h.x, h.x) * 0.8, top - o.y + 0.0002, rng.randf_range(-h.z, h.z) * 0.7), Color("#3a3036"), -1)
+	if label:
+		label.modulate = Color(0.45, 0.45, 0.47)
+	if sub_label:
+		sub_label.modulate = Color(0.45, 0.45, 0.47)
 
 
 func set_highlight(on: bool) -> void:

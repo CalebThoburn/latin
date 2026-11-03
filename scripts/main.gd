@@ -191,9 +191,20 @@ func _ready() -> void:
 			_start_play()
 		elif boot_mode == "new":
 			_start_play()
-			get_tree().create_timer(1.0).timeout.connect(func() -> void:
-				_toast("Welcome to the officina! Your tasks are the sticky notes on the board to your left.", 6.0))
+			_begin_mode(new_mode)
 		boot_mode = ""
+	if "--tutview" in a0 or "--tutbench" in a0: # screenshot: the tutorial's sheet, or the bench with its outlines
+		_start_play()
+		new_mode = "tutorial"
+		_begin_mode("tutorial")
+		_accept_note(1, "tut")
+		if "--tutview" in a0:
+			player = Vector3(SIDE_X + 1.2, 0, 0.9)
+			yaw = deg_to_rad(90)
+			pitch = deg_to_rad(-3)
+		else:
+			pitch = deg_to_rad(-38)
+		_place_camera()
 	if "--wallview" in a0: # screenshot: the sticky notes on the board
 		player = Vector3(SIDE_X + 1.2, 0, 0.9)
 		yaw = deg_to_rad(90)
@@ -684,13 +695,23 @@ func _build_trash() -> void:
 ## Into the bin: the pieces drop in and are gone.
 func _trash(d: Chunk) -> void:
 	_remove_chunk(d)
-	for t: Tile in d.tiles: # thrown-away endings turn up again in their drawers
-		if t.kind == "ending" and not t.soldered:
+	for t: Tile in d.tiles: # thrown-away endings turn up again in their drawers (not in career: buy new ones)
+		if t.kind == "ending" and not t.soldered and mode != "career":
 			_restock(t)
 	var tw := d.create_tween().set_parallel()
 	tw.tween_property(d, "position", Vector3(TRASH_POS.x - d.width * 0.3, TRASH_POS.y + 0.05, TRASH_POS.z), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_property(d, "scale", Vector3.ONE * 0.6, 0.3)
 	tw.chain().tween_callback(d.queue_free)
+
+
+## An ending bought on the computer: it's dropped into its drawer.
+func _stock_ending(di: int, e: String) -> void:
+	var d: Dictionary = drawers[di]
+	var et := _new_tile("ending", e, d["cat"])
+	et.set_meta("drawer_i", di)
+	var dn: Node3D = d["node"]
+	_make_loose(et, dn.global_transform * Vector3(randf_range(-0.3, 0.3) * d["iw"], 0.1, randf_range(-0.3, 0.3) * d["dd"]), false)
+	Sfx.play(self, "place", dn.global_position, -8.0)
 
 
 ## A fresh copy of this ending, dropped back into the drawer it came from.
@@ -1807,6 +1828,8 @@ func _feed(d: Chunk, want: Vector3, delta: float) -> Dictionary:
 	var contact: float = seat["contact"]
 	var vr := Chunk.validate(best.tiles + [e])
 	var ok: bool = vr["ok"] or vr.get("neuter_bad", false) # a wrong ending on a neuter goes on... and sparks off
+	if mode == "career" and not vr.get("broken", false): # (career: nothing stops a wrong ending going on: it breaks)
+		ok = true
 	# (each piece's own "up": a word standing in a genitive holder is on its side)
 	var cur := Si * (d.position + d.quaternion * Vector3(0, Tile.H * 0.5, 0))
 	var l := Si * (want + best.quaternion * Vector3(0, Tile.H * 0.5, 0))
@@ -1983,8 +2006,8 @@ func _release_owned(oc: Chunk) -> void:
 ## Fully pushed on: the ending becomes part of the word, with a little bounce.
 func _seat(d: Chunk, c: Chunk) -> void:
 	var vr := Chunk.validate(c.tiles + d.tiles)
-	if not vr["ok"] and vr.get("neuter_bad", false):
-		_neuter_reject(d, c)
+	if not vr["ok"] and (vr.get("neuter_bad", false) or (mode == "career" and not vr.get("broken", false))):
+		_neuter_reject(d, c) # (in career mode, both pieces break)
 		return
 	_end_drag()
 	_try_insert(d, {"chunk": c, "slot": {"index": c.tiles.size(), "replace": -1}})
@@ -1996,6 +2019,10 @@ func _neuter_reject(d: Chunk, c: Chunk) -> void:
 	if dragging == d:
 		_end_drag()
 	var st: Tile = c.tiles.back()
+	if mode == "career": # a mistake: the ending and the stem it was forced onto are both ruined
+		_break(st)
+		for t: Tile in d.tiles:
+			_break(t)
 	var b := st.global_basis.orthonormalized()
 	var joint := st.global_transform * Vector3(st.width * 0.5, 0, 0)
 	_sparks(joint)
@@ -2006,6 +2033,20 @@ func _neuter_reject(d: Chunk, c: Chunk) -> void:
 	rb.linear_velocity = b.x * 1.6 + Vector3.UP * 1.8 + b.z * randf_range(-0.3, 0.3)
 	rb.angular_velocity = Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9))
 	c.bounce(1.06)
+
+
+## Career: a mistake ruins a piece.
+func _break(t: Tile) -> void:
+	if not is_instance_valid(t) or t.broken:
+		return
+	t.set_broken()
+	for cd: Cord in t.cords_out:
+		if is_instance_valid(cd) and cd.socket_tile:
+			cd.free_xf = cd.plug.global_transform.orthonormalized()
+			cd.socket_tile = null
+			cd.parked = false
+	get_tree().create_timer(0.6).timeout.connect(func() -> void:
+		_toast("Broken! Throw it in the bin and order a new one on the computer.", 4.0))
 
 
 func _sparks(at: Vector3) -> void:
@@ -2371,6 +2412,12 @@ func _update_functions() -> void:
 	for c: Chunk in chunks:
 		for t: Tile in c.tiles:
 			var cs: Array = t.cords_out.filter(func(x): return is_instance_valid(x) and not x.dying)
+			if t.broken: # ruined: no cables
+				for x: Cord in cs:
+					x.emerge_goal = 0.0
+				t.port_goal = 0.0
+				t.gen_goal = 0.0
+				continue
 			if t.kind == "ending" and c.cap_of(t) != null: # an adjective now: the cap does the work
 				for x: Cord in cs:
 					x.emerge_goal = 0.0
@@ -2655,7 +2702,7 @@ func _facing_socket(cd: Cord, near: Vector3) -> Array:
 					continue
 				if i == 0 and t.port_node and not t.port_open(): # its socket is put away just now
 					continue
-				if _capped(t): # an adjective's ending: covered by its cap
+				if _capped(t) or t.broken: # an adjective's ending: covered by its cap (or ruined)
 					continue
 				if i > 0 and t.sock(i)["kind"] == "agree" and t.agree_closed(): # shut: the ending has it now
 					continue
@@ -2734,7 +2781,8 @@ func _update_held(cd: Cord, delta: float) -> void:
 	var S := Cord.socket_xf(t, ti)
 	var Si := S.affine_inverse()
 	var cl := Si * cur.origin
-	var fits := cd.fits(t, ti)
+	var true_fit := cd.fits(t, ti)
+	var fits: bool = true_fit or (mode == "career" and t.sock(ti)["kind"] == cd.kind) # (career: a wrong plug goes in... and breaks)
 	var leaving := false
 	if cd.has_meta("leaving"):
 		var lv: Array = cd.get_meta("leaving")
@@ -2755,6 +2803,9 @@ func _update_held(cd: Cord, delta: float) -> void:
 		cd.free_xf = S * Transform3D(Basis.IDENTITY, Vector3(lx, 0, 0))
 		_light(t, true)
 		if lx <= cd.plen() * 0.06: # all the way in: click, and it's let go of for you
+			if not true_fit: # (career: the wrong plug: sparks, and it's ruined)
+				_eject(cd, t, ti)
+				return
 			_drop_plug()
 		return
 	var dist := Vector2(S.origin.x - cur.origin.x, S.origin.z - cur.origin.z).length()
@@ -2975,6 +3026,8 @@ func _misfit_plug(cd: Cord, t: Tile, ti: int) -> bool:
 
 ## Sparks, and the plug is spat back out of the hole.
 func _eject(cd: Cord, t: Tile, ti: int) -> void:
+	if mode == "career" and cd != disp_cord: # a mistake: the piece whose plug it was is ruined
+		_break(cd.owner_tile)
 	var S := Cord.socket_xf(t, ti)
 	_sparks(S.origin)
 	Sfx.play(self, "spark", S.origin, 2.0)
@@ -3484,6 +3537,26 @@ static func _plain(t: String) -> String:
 ## Stems that start with (or contain) what's been typed, shown as stems.
 func _results() -> Array:
 	var out := []
+	if query.begins_with("-"): # career: endings, into their drawers
+		if mode != "career":
+			return out
+		var q := query.substr(1)
+		var seen := {}
+		for di in drawers.size():
+			var d: Dictionary = drawers[di]
+			for info in Latin.DRAWERS:
+				if info.get("id", info["cat"]) != d["id"]:
+					continue
+				for e: String in info["endings"]:
+					if seen.has(d["id"] + e):
+						continue
+					seen[d["id"] + e] = true
+					var forms := [e]
+					if e.ends_with("~"):
+						forms = Latin.REELS[d["cat"]][e.left(-1)].map(func(o): return Latin.reel_form(e.left(-1), o))
+					if q == "" or forms.any(func(f): return _plain(f).begins_with(q)):
+						out.append(["-%s (%s)" % ["/".join(forms.slice(0, 3)) + ("…" if forms.size() > 3 else ""), d["name"]], "E:%d:%s" % [di, e]])
+		return out
 	for k in Latin.STEMS:
 		var shown: String = k + "-"
 		var nom := _plain(Latin.nom_form(k))
@@ -3506,7 +3579,25 @@ func _order(row: int) -> void:
 	if row < 0 or row >= res.size() or chal_on:
 		return
 	sel = row
-	_deliver(res[row][1])
+	var key: String = res[row][1]
+	if mode == "career": # words cost money here
+		var cost := 2 if key.begins_with("E:") else 3
+		if money < cost:
+			sent_msg = "pecunia deest!"
+			sent_t = 2.0
+			screen_key = ""
+			Sfx.play2d(self, "click", -4.0, 0.6)
+			return
+		money -= cost
+		_hud_update()
+	if key.begins_with("E:"):
+		var pp := key.split(":")
+		_stock_ending(int(pp[1]), pp[2])
+		sent_msg = "in loculo: " + drawers[int(pp[1])]["name"]
+		sent_t = 2.0
+		screen_key = ""
+		return
+	_deliver(key)
 	sent_msg = "missum: " + res[row][0]
 	sent_t = 2.0
 	screen_key = ""
@@ -3530,7 +3621,10 @@ func _search_key(ev: InputEventKey) -> void:
 			_set_tab("scene")
 		_:
 			var ch := char(ev.unicode).to_lower() if ev.unicode > 0 else ""
-			if ch.length() == 1 and ch >= "a" and ch <= "z" and query.length() < 16:
+			if ch == "-" and query == "" and mode == "career": # (endings)
+				query = "-"
+				sel = 0
+			elif ch.length() == 1 and ch >= "a" and ch <= "z" and query.length() < 16:
 				query += ch
 				sel = 0
 	screen_key = ""
@@ -3692,6 +3786,7 @@ func _process(delta: float) -> void:
 			broken_key = bkey
 			if sc["state"] == "scene":
 				_judge(sc)
+				_check_order(sc)
 		noise_t -= delta
 		if noise_t <= 0.0 or screen_key != "broken":
 			noise_t = 0.09
@@ -3711,6 +3806,7 @@ func _process(delta: float) -> void:
 		if sc["state"] == "scene": # every time the picture changes, check it against the board (and the challenge)
 			_judge(sc)
 			_check_challenge(sc)
+			_check_order(sc)
 
 
 # ---------------------------------------------------------------- the billboard
@@ -4307,6 +4403,11 @@ static func _a(w: Dictionary, adjs: Array) -> Dictionary:
 	w["adj"] = adjs
 	return w
 var money := 0
+var mode := "learn" # "tutorial" (just the tutorials), "learn" (the levels), "career" (orders, for money)
+static var new_mode := "learn" # (the mode picked for a new game, kept across the reload)
+var orders: Array = [] # career: the orders on the board
+var order_n := 0 # (numbers them)
+var order_target := {} # career: the sentence the order you're on wants
 var notes_done := {} # "level:kind" -> true
 var active_note := "" # the note being worked on ("" = none)
 var note_nodes := {} # "level:kind" -> {mesh, label}
@@ -4372,6 +4473,7 @@ func _note_info(L: int, kind: String) -> Dictionary:
 	match kind:
 		"tut": return TUTORIALS[L - 1]
 		"chal": return CERTAMINA[L - 1]
+		"order": return orders[L - 1] if L - 1 < orders.size() else {}
 	return CAMPAIGN[L - 1][kind]
 
 
@@ -4379,6 +4481,7 @@ func _note_type(L: int, kind: String) -> String:
 	match kind:
 		"tut": return "tut"
 		"chal": return CERTAMINA[L - 1]["type"]
+		"order": return orders[L - 1]["type"] if L - 1 < orders.size() else "picture"
 	return kind
 
 
@@ -4388,19 +4491,23 @@ func _tuts_done() -> bool:
 
 func _note_state(L: int, kind: String) -> String:
 	var k := _note_key(L, kind)
-	if notes_done.has(k):
-		return "done"
 	if k == active_note:
 		return "active"
+	if kind == "order": # career: the orders on the board (they go when they're done)
+		return "open" if mode == "career" and L - 1 < orders.size() else "locked"
+	if notes_done.has(k):
+		return "done"
 	match kind:
 		"tut":
+			if mode != "tutorial":
+				return "locked"
 			return "open" if L == 1 or notes_done.has(_note_key(L - 1, "tut")) else "locked"
 		"chal":
 			var ci: Dictionary = CERTAMINA[L - 1]
-			if not _tuts_done() or Latin.level < int(ci["level"]) or (ci["after"] != "" and not notes_done.has(ci["after"])):
+			if mode != "learn" or Latin.level < int(ci["level"]) or (ci["after"] != "" and not notes_done.has(ci["after"])):
 				return "locked"
 			return "open"
-	if L > Latin.level or not _tuts_done():
+	if mode != "learn" or L > Latin.level:
 		return "locked"
 	return "open"
 
@@ -4415,14 +4522,20 @@ func _all_notes() -> Array:
 		out.append([i + 1, "picture"])
 	for i in CERTAMINA.size():
 		out.append([i + 1, "chal"])
+	for i in ORDER_SLOTS:
+		out.append([i + 1, "order"])
 	return out
+
+
+const ORDER_SLOTS := 3
 
 
 ## The sticky notes on the challenge map: only the ones you can take on now are
 ## pinned up, in a row along the top of the sheet, a little crooked. While you're
 ## doing one, they're taken down and the sheet shows what to do, ticked off as you go.
 var map_heading: Label3D
-var checklist: Label3D
+var checklist: Node3D
+var checklist_sig := ""
 
 
 func _build_notes(map: Node3D) -> void:
@@ -4432,14 +4545,8 @@ func _build_notes(map: Node3D) -> void:
 	map_heading.outline_size = 0
 	map_heading.position = Vector3(0, 0.3, 0.008)
 	map.add_child(map_heading)
-	checklist = Art.label3d("", 22)
-	checklist.modulate = Art.INK
-	checklist.outline_size = 0
-	checklist.width = 760
-	checklist.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	checklist.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	checklist.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	checklist.position = Vector3(0, 0.39, 0.006)
+	checklist = Node3D.new() # (filled in by _update_checklist)
+	checklist.position = Vector3(0, 0, 0.006)
 	checklist.visible = false
 	map.add_child(checklist)
 	for nk in _all_notes():
@@ -4466,7 +4573,7 @@ func _build_notes(map: Node3D) -> void:
 	_refresh_notes()
 
 
-const NOTE_COL := {"tut": Color("#b6e3a0"), "recon": Color("#ffe066"), "picture": Color("#ffb3c7"), "chal": Color("#9fd0ff")}
+const NOTE_COL := {"tut": Color("#b6e3a0"), "recon": Color("#ffe066"), "picture": Color("#ffb3c7"), "chal": Color("#9fd0ff"), "order": Color("#ffc58a")}
 const NOTE_TILT := [-5.0, 3.5, -2.0, 4.5, -3.5, 2.0]
 
 
@@ -4488,7 +4595,7 @@ func _refresh_notes() -> void:
 		var info := _note_info(nk[0], nk[1])
 		(n["mesh"].material_override as ShaderMaterial).set_shader_parameter("albedo", NOTE_COL[nk[1]])
 		n["label"].text = info["title"]
-		var what: String = {"tut": "disce", "recon": "sententiae", "picture": "picturae", "chal": "certamen"}[nk[1]]
+		var what: String = {"tut": "disce", "recon": "sententiae", "picture": "picturae", "chal": "certamen", "order": "ordo"}[nk[1]]
 		n["sub"].text = what + "   %d den." % info["pay"]
 	for k in shown.size(): # a row along the top of the sheet
 		var nd: Node3D = shown[k]["node"]
@@ -4499,35 +4606,102 @@ func _refresh_notes() -> void:
 		_update_checklist()
 
 
-## What the sheet says while you're on a task: each thing to do, ticked off.
+## What the sheet says while you're on a task: its name, what to do, and a
+## checkbox for each part of it, ticked as you finish them. Big, and in the
+## middle of the sheet, so you can read it from the bench.
 func _update_checklist() -> void:
 	if not checklist or active_note == "":
 		return
 	var parts := active_note.split(":")
 	var L := int(parts[0])
 	var info := _note_info(L, parts[1])
-	var lines := PackedStringArray([info["title"].to_upper(), ""])
+	if info.is_empty():
+		return
+	var notes := PackedStringArray()
+	var rows := [] # [text, done]
 	match _note_type(L, parts[1]):
 		"tut":
 			var steps: Array = info["steps"]
 			for k in steps.size():
-				var mark := "[✓]" if k < tut_step else ("[ ] →" if k == tut_step else "[ ]")
-				lines.append("%s %s" % [mark, steps[k]["text"]])
+				rows.append([steps[k]["text"], k < tut_step])
 		"recon":
-			lines.append("The words come down the chute into the tray. Rebuild each sentence: wire it up and plug in the computer.")
+			if parts[1] == "order":
+				notes.append("Words come down the chute (free). Wire them into one sentence.")
+				notes.append("Mistakes break parts: bin them. QVAERE: a word 3 den., an ending 2 den. (type -).")
+				rows.append(["Build the sentence and plug in the computer", false])
+			else:
+				notes.append("Words come down the chute. Rebuild each sentence and plug in the computer.")
+				for k in chal_sets.size():
+					rows.append(["Sententia %s" % Latin.ROMAN[k], k < chal_i])
 			if info.get("blind", false):
-				lines.append("(No gender colours: you have to know them.)")
-			for k in chal_sets.size():
-				var mark := "[✓]" if k < chal_i else ("[ ] →" if k == chal_i else "[ ]")
-				lines.append("%s Sententia %s" % [mark, Latin.ROMAN[k]])
+				notes.append("No gender colours: you have to know them.")
 		"picture":
-			lines.append("Make the computer's picture match the one on the billboard.")
+			notes.append("Make the computer's picture match the one on the billboard.")
+			if parts[1] == "order":
+				notes.append("Order the words on the computer. A word 3 den., an ending 2 den. (type -). Mistakes break parts.")
 			if info.get("broken", false):
-				lines.append("(The screen is broken: you can't see what you've built.)")
+				notes.append("The screen is broken: you can't see what you've built.")
 			for k in board_list.size():
-				var mark := "[✓]" if k < board_i else ("[ ] →" if k == board_i else "[ ]")
-				lines.append("%s Pictura %s" % [mark, Latin.ROMAN[k]])
-	checklist.text = "\n".join(lines)
+				rows.append(["Pictura %s" % Latin.ROMAN[k], k < board_i])
+	var sig := JSON.stringify([info["title"], notes, rows])
+	if sig == checklist_sig:
+		return
+	checklist_sig = sig
+	for ch in checklist.get_children():
+		ch.queue_free()
+	# heights: the title, the notes, then the rows (each as tall as its wrapped text)
+	const ROW_W := 600 # px (at 1 mm a pixel)
+	const ROW_FONT := 30
+	var row_h := []
+	for r in rows:
+		var lines := ceili(float(String(r[0]).length()) * ROW_FONT * 0.5 / ROW_W)
+		row_h.append(maxf(0.055, lines * ROW_FONT * 0.00125 + 0.018))
+	var note_lines := 0
+	for n in notes:
+		note_lines += ceili(float(n.length()) * 22 * 0.5 / 720.0)
+	var total := 0.07 + note_lines * 0.03 + 0.03
+	for h in row_h:
+		total += h
+	var y := minf(0.4, total * 0.5) # (the whole block centred on the sheet)
+	var title := Art.label3d(String(info["title"]).to_upper(), 46)
+	title.modulate = Art.INK
+	title.position = Vector3(0, y - 0.03, 0)
+	checklist.add_child(title)
+	y -= 0.07
+	for n in notes:
+		var nl := ceili(float(n.length()) * 22 * 0.5 / 720.0)
+		var lab := Art.label3d(n, 22)
+		lab.modulate = Color("#5a4a3a")
+		lab.width = 720
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lab.position = Vector3(0, y - nl * 0.015, 0)
+		checklist.add_child(lab)
+		y -= nl * 0.03
+	y -= 0.03
+	var first_open := true
+	for k in rows.size():
+		var done: bool = rows[k][1]
+		var h: float = row_h[k]
+		var cy := y - h * 0.5
+		var x0 := -(ROW_W * 0.001 + 0.06) * 0.5 # (box + text, centred)
+		# the checkbox: a dark square with a white face; a big green tick when it's done
+		Art.box(checklist, Vector3(0.042, 0.042, 0.002), Vector3(x0 + 0.021, cy, 0.0), Art.INK, -1)
+		Art.box(checklist, Vector3(0.034, 0.034, 0.002), Vector3(x0 + 0.021, cy, 0.0012), Color("#fffdf4") if not (not done and first_open) else Color("#ffe9b0"), -1)
+		if done:
+			var tick := Art.label3d("✓", 52)
+			tick.modulate = Color("#2e9a44")
+			tick.position = Vector3(x0 + 0.023, cy + 0.004, 0.003)
+			checklist.add_child(tick)
+		var lab := Art.label3d(rows[k][0], ROW_FONT)
+		lab.modulate = Color("#8a8070") if done else Art.INK
+		lab.width = ROW_W
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lab.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		lab.position = Vector3(x0 + 0.06, cy, 0.002) # (left-aligned text hangs off to the right of this)
+		checklist.add_child(lab)
+		if not done:
+			first_open = false
+		y -= h
 
 
 ## Click a sticky note: it comes up close, readable, with what it pays and an accept button.
@@ -4540,6 +4714,8 @@ func _open_note(L: int, kind: String) -> void:
 	note_kind.text = {"tut": "DISCE", "recon": "SENTENTIAS RESTITVE", "picture": "PICTVRAM FAC"}[ty]
 	if kind == "chal":
 		note_kind.text = "CERTAMEN · " + note_kind.text
+	elif kind == "order":
+		note_kind.text = "ORDO · " + note_kind.text
 	note_body.text = info["text"] if st != "locked" else "Finish the notes before this one to unlock it."
 	note_pay.text = "MERCES: %d denarii" % info["pay"]
 	note_accept.text = {"open": "ACCIPE", "active": "IN PROGRESS", "done": "DONE ✓", "locked": "LOCKED"}[st]
@@ -4589,10 +4765,16 @@ func _accept_note(L: int, kind: String) -> bool:
 	match _note_type(L, kind):
 		"tut":
 			_start_tut(info)
+		"recon" when kind == "order": # the words come free; it's done when the computer shows the sentence
+			order_target = info["target"]
+			for spec in info["words"]:
+				chute_queue.append(spec)
 		"recon":
 			_start_challenge(info["sets"])
 		_:
-			_board_load(info["puzzles"])
+			if kind == "order":
+				order_target = info["target"]
+			_board_load(info["puzzles"] if info.has("puzzles") else [info["target"]])
 	_refresh_notes()
 	_hud_update()
 	_toast(info["title"])
@@ -4607,7 +4789,12 @@ func _note_done() -> void:
 	var L := int(parts[0])
 	var info := _note_info(L, parts[1])
 	var ty := _note_type(L, parts[1])
-	notes_done[active_note] = true
+	if parts[1] == "order": # an order's done: it comes off the board, and a new one goes up
+		orders.remove_at(L - 1)
+		orders.append(_make_order())
+		order_target = {}
+	else:
+		notes_done[active_note] = true
 	active_note = ""
 	gender_blind = false
 	screen_broken = false
@@ -4621,13 +4808,138 @@ func _note_done() -> void:
 	if parts[1] in ["recon", "picture"] and notes_done.has(_note_key(L, "recon")) and notes_done.has(_note_key(L, "picture")) and L == Latin.level:
 		_level_up()
 	elif parts[1] == "tut" and _tuts_done():
-		get_tree().create_timer(2.5).timeout.connect(func() -> void: _toast("You know the basics! New notes on the board.", 6.0))
+		get_tree().create_timer(2.5).timeout.connect(func() -> void:
+			_toast("Tirocinium perfectum! You know the basics. Start a DISCIPVLVS or MERCATOR game from the menu (Esc).", 9.0))
 	for ci in CERTAMINA.size(): # a challenge this one opened
 		if CERTAMINA[ci]["after"] == active_note_was(parts) and _note_state(ci + 1, "chal") == "open":
 			get_tree().create_timer(2.5).timeout.connect(func() -> void: _toast("A new challenge on the board: %s" % CERTAMINA[ci]["title"], 5.0))
 	_refresh_notes()
 	_hud_update()
 	_save_game()
+
+
+## Career: a random order. Half want a sentence wired up from words sent down the
+## chute; half want a picture made (you buy the words). Some have adjectives; some
+## have no gender colours, or a broken screen. Pays by how much there is to do.
+const ORDER_NOUNS := {"puell": "f", "agricol": "m", "naut": "m", "regin": "f", "fili": "f", "femin": "f", "serv": "m", "domin": "m",
+		"amic": "m", "equ": "m", "lup": "m", "puer": "m", "reg": "m", "milit": "m", "matr": "f", "can": "m", "leon": "m"}
+const ORDER_VT := ["ama", "vide", "porta", "voca", "lauda", "capi", "habe", "duc", "time", "terre", "audi", "specta"]
+const ORDER_VI := ["curr", "ambula", "dormi", "erra", "sede"]
+const ORDER_ADJ := ["bon", "mal", "magn", "parv", "laet"]
+
+
+static func _order_form(stem: String, case: String, num: String) -> Array: # [ending, cat]
+	var s: Dictionary = Latin.STEMS[stem]
+	var d := int(s["decl"])
+	var i := (0 if case == "nom" else 2) + (0 if num == "sg" else 1)
+	match d:
+		1: return [["a", "ae", "am", "as"][i], "decl1"]
+		2: return [[("" if s.get("bare_nom", false) else "us"), "i", "um", "os"][i], "decl2"]
+	return [["", "es", "em", "es"][i], "decl3"]
+
+
+static func _order_adj(g: String, case: String, num: String) -> Array:
+	var i := (0 if case == "nom" else 2) + (0 if num == "sg" else 1)
+	if g == "f":
+		return [["a", "ae", "am", "as"][i], "decl1"]
+	return [["us", "i", "um", "os"][i], "decl2"]
+
+
+func _make_order() -> Dictionary:
+	order_n += 1
+	var nouns: Array = ORDER_NOUNS.keys()
+	var num := "sg" if randf() < 0.6 else "pl"
+	var subj: String = nouns.pick_random()
+	var trans := randf() < 0.7
+	var verb: String = ORDER_VT.pick_random() if trans else ORDER_VI.pick_random()
+	var obj := ""
+	var onum := "sg" if randf() < 0.6 else "pl"
+	if trans:
+		obj = nouns.pick_random()
+		while obj == subj:
+			obj = nouns.pick_random()
+	var words := []
+	var sf := _order_form(subj, "nom", num)
+	words.append([subj, sf[0], sf[1] if sf[0] != "" else ""])
+	var sw := {"stem": subj, "num": num}
+	var ow = null
+	if trans:
+		var of := _order_form(obj, "acc", onum)
+		words.append([obj, of[0], of[1]])
+		ow = {"stem": obj, "num": onum}
+	words.append([verb, "t" if num == "sg" else "unt", "verb"])
+	var has_adj := randf() < 0.45
+	if has_adj: # an adjective on the subject or the object
+		var adj: String = ORDER_ADJ.pick_random()
+		var on_obj: bool = trans and randf() < 0.5
+		var a_f := _order_adj(ORDER_NOUNS[obj if on_obj else subj], "acc" if on_obj else "nom", onum if on_obj else num)
+		words.append([adj, a_f[0], a_f[1], "cap"])
+		if on_obj:
+			ow["adj"] = [adj]
+		else:
+			sw["adj"] = [adj]
+	var target := {"verb": verb, "person": 3, "vnum": num, "subj": sw, "obj": ow}
+	var kind := "recon" if randf() < 0.5 else "picture"
+	var o := {"type": kind, "target": target, "title": "Ordo %s" % _roman(order_n)}
+	var pay := 6 * words.size() + (8 if has_adj else 0)
+	if kind == "recon":
+		words.shuffle()
+		o["words"] = words
+		o["blind"] = has_adj and randf() < 0.4
+		o["text"] = "ORDO. A customer has sent some words down the chute: wire them up into a sentence, and plug in the computer." + \
+				(" No gender colours on these." if o["blind"] else "")
+		pay += 10 if o["blind"] else 0
+	else:
+		o["broken"] = randf() < 0.25
+		o["text"] = "ORDO. Make the computer show this picture (it's on the billboard). Order the words you need." + \
+				(" The screen is broken: you won't see what you've built." if o["broken"] else "")
+		pay += 6 + (15 if o["broken"] else 0)
+	o["pay"] = pay
+	return o
+
+
+static func _roman(n: int) -> String:
+	var out := ""
+	for pr in [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]:
+		while n >= pr[0]:
+			out += pr[1]
+			n -= pr[0]
+	return out
+
+
+## Career: the order you're on wants this sentence: is it on the computer?
+func _check_order(sc: Dictionary) -> void:
+	if order_target.is_empty() or active_note == "" or not active_note.ends_with(":order") or sc.get("state", "") != "scene":
+		return
+	if _note_type(int(active_note.split(":")[0]), "order") != "recon":
+		return
+	if _same_scene(sc, order_target):
+		_recte()
+		order_target = {}
+		get_tree().create_timer(1.0).timeout.connect(_note_done)
+
+
+## Starting a new game in a mode.
+func _begin_mode(m: String) -> void:
+	mode = m
+	money = 0
+	notes_done.clear()
+	orders.clear()
+	order_n = 0
+	Latin.level = 1
+	if mode == "career": # everything unlocked; some money to buy words with; orders on the board
+		Latin.level = 99
+		money = 50
+		for i in ORDER_SLOTS:
+			orders.append(_make_order())
+	_apply_locks()
+	_refresh_notes()
+	_hud_update()
+	_save_game()
+	var msg: String = {"tutorial": "Tirocinium: learn how the officina works. Your first task is the green note on the board to your left.",
+			"learn": "Welcome to the officina! Your tasks are the sticky notes on the board to your left.",
+			"career": "Mercator: everything is unlocked. Take orders from the board to your left. Words cost money, and mistakes break your parts."}[mode]
+	get_tree().create_timer(1.0).timeout.connect(func() -> void: _toast(msg, 7.0))
 
 
 func active_note_was(parts: PackedStringArray) -> String:
@@ -4665,10 +4977,8 @@ func _tut_end() -> void:
 func _update_tut(delta: float) -> void:
 	if tut_info.is_empty():
 		return
-	for k in tut_arrows.size(): # the arrows bob up and down
-		var a: Node3D = tut_arrows[k]
-		if a.visible:
-			a.get_child(0).position.y = 0.03 * sin(Time.get_ticks_msec() * 0.006 + k)
+	if glow_mat: # the outlines pulse
+		glow_mat.albedo_color.a = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.006)
 	tut_t -= delta
 	if tut_t > 0.0:
 		return
@@ -4733,78 +5043,115 @@ func _tut_check(what: String) -> bool:
 	return false
 
 
-## Point things out: an arrow bobbing over each, and the pieces lit up.
+## Point things out: a glowing white outline round each thing to use next.
 func _tut_highlight(targets: Array) -> void:
-	var spots := []
-	var lit := []
+	var boxes := [] # [transform (centre), size]
 	for tg: String in targets:
 		var p := tg.split(":")
-		var at = null
 		match p[0]:
-			"tile":
+			"tile", "end":
 				var t := _stem_tile(p[1])
+				if t and p[0] == "end":
+					t = null if not t.get_parent() is Chunk else _next_tile(t)
 				if t:
-					lit.append(t)
-					at = t.global_position + Vector3(0, 0.14, 0)
-			"end":
-				var t := _stem_tile(p[1])
-				if t and t.get_parent() is Chunk:
-					var c: Chunk = t.get_parent()
-					var i := c.tiles.find(t)
-					if i + 1 < c.tiles.size():
-						lit.append(c.tiles[i + 1])
-						at = c.tiles[i + 1].global_position + Vector3(0, 0.14, 0)
+					var xf := t.global_transform.orthonormalized()
+					boxes.append([xf * Transform3D(Basis.IDENTITY, t.shape_offset()), t.box_half() * 2.0])
 			"plug":
 				if is_instance_valid(disp_cord) and disp_cord.socket_tile == null:
-					at = disp_cord.plug.global_position + Vector3(0, 0.12, 0)
+					boxes.append(_plug_box(disp_cord))
 			"plugof":
 				var t := _stem_tile(p[1])
 				if t and t.get_parent() is Chunk:
-					var c: Chunk = t.get_parent()
-					for x: Tile in c.tiles:
+					for x: Tile in t.get_parent().tiles:
 						for cd: Cord in x.cords_out:
 							if is_instance_valid(cd) and cd.kind == "nom" and cd.socket_tile == null and cd.visible:
-								at = cd.plug.global_position + Vector3(0, 0.12, 0)
+								boxes.append(_plug_box(cd))
 			"drawer":
 				for d: Dictionary in drawers:
 					if d["id"] == p[1] or d["cat"] == p[1]:
-						var f: Node3D = d["front"]
-						at = f.global_position + f.global_basis.z * 0.12 + Vector3(0, 0.1, 0)
+						boxes.append(_body_box(d["front"]))
 						break
 			"tab":
 				if tab_nodes.has(p[1]) and screen_tab != p[1]:
-					at = tab_nodes[p[1]].global_position + Vector3(0, 0.12, 0)
+					var tn: MeshInstance3D = tab_nodes[p[1]]
+					var sc := tn.global_basis.get_scale()
+					boxes.append([Transform3D(tn.global_basis.orthonormalized(), tn.global_position), (tn.mesh as BoxMesh).size * sc])
 			"screen":
 				if screen_body:
-					at = screen_body.global_position + Vector3(0, 0.3, 0)
-		if at != null:
-			spots.append(at)
-	while tut_arrows.size() < spots.size():
-		var a := Node3D.new()
-		add_child(a)
-		var inner := Node3D.new()
-		a.add_child(inner)
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.035
-		cone.bottom_radius = 0.0
-		cone.height = 0.07
-		Art.mesh(inner, cone, Vector3.ZERO, Color("#ffd23f"), 2, 0.6)
-		var stalk := CylinderMesh.new()
-		stalk.top_radius = 0.012
-		stalk.bottom_radius = 0.012
-		stalk.height = 0.06
-		Art.mesh(inner, stalk, Vector3(0, 0.06, 0), Color("#ffd23f"), 2, 0.6)
-		tut_arrows.append(a)
+					boxes.append(_body_box(screen_body))
+	while tut_arrows.size() < boxes.size():
+		var g := Node3D.new()
+		add_child(g)
+		g.set_meta("size", Vector3.ZERO)
+		tut_arrows.append(g)
 	for k in tut_arrows.size():
-		tut_arrows[k].visible = k < spots.size()
-		if k < spots.size():
-			tut_arrows[k].global_position = spots[k] + Vector3(0, 0.04, 0)
-	for t in tut_lit:
-		if is_instance_valid(t) and not t in lit:
-			t.set_highlight(false)
-	for t: Tile in lit:
-		t.set_highlight(true)
-	tut_lit = lit
+		var g: Node3D = tut_arrows[k]
+		g.visible = k < boxes.size()
+		if not g.visible:
+			continue
+		var size: Vector3 = boxes[k][1] + Vector3.ONE * 0.016
+		if not g.get_meta("size").is_equal_approx(size):
+			_glow_frame(g, size)
+		g.global_transform = boxes[k][0]
+
+
+func _next_tile(t: Tile) -> Tile:
+	var c: Chunk = t.get_parent()
+	var i := c.tiles.find(t)
+	return c.tiles[i + 1] if i + 1 < c.tiles.size() else null
+
+
+func _plug_box(cd: Cord) -> Array:
+	var bt := cd.boot()
+	var L := cd.plen()
+	var xf := cd.plug.global_transform.orthonormalized()
+	return [xf * Transform3D(Basis.IDENTITY, Vector3((bt.x - L) * 0.5, 0, 0)), Vector3(bt.x + L, bt.y, bt.z)]
+
+
+## A collider's box, in the world: [transform, size].
+func _body_box(b: Node3D) -> Array:
+	for ch in b.get_children():
+		if ch is CollisionShape3D and ch.shape is BoxShape3D:
+			var xf: Transform3D = ch.global_transform
+			return [Transform3D(xf.basis.orthonormalized(), xf.origin), (ch.shape as BoxShape3D).size * xf.basis.get_scale()]
+	return [b.global_transform, Vector3.ONE * 0.05]
+
+
+var glow_mat: StandardMaterial3D
+
+
+## Twelve thin glowing white bars along the edges of a box.
+func _glow_frame(g: Node3D, size: Vector3) -> void:
+	g.set_meta("size", size)
+	for ch in g.get_children():
+		ch.queue_free()
+	if glow_mat == null:
+		glow_mat = StandardMaterial3D.new()
+		glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		glow_mat.albedo_color = Color(1, 1, 1, 0.9)
+		glow_mat.no_depth_test = true # (seen through whatever's in front)
+		glow_mat.render_priority = 2
+	var h := size * 0.5
+	var w := 0.009
+	for ax in 3:
+		for a in [-1, 1]:
+			for b in [-1, 1]:
+				var bm := BoxMesh.new()
+				var sz := Vector3(w, w, w)
+				sz[ax] = size[ax] + w
+				bm.size = sz
+				var mi := MeshInstance3D.new()
+				mi.mesh = bm
+				mi.material_override = glow_mat
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				var pos := Vector3.ZERO
+				var o1 := (ax + 1) % 3
+				var o2 := (ax + 2) % 3
+				pos[o1] = a * h[o1]
+				pos[o2] = b * h[o2]
+				mi.position = pos
+				g.add_child(mi)
 
 
 func _level_up() -> void:
@@ -4870,7 +5217,8 @@ func _save_game() -> void:
 		return
 	var f := FileAccess.open(save_path if save_path != "" else _slot_path(slot), FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"level": Latin.level, "money": money, "notes_done": notes_done.keys()}))
+		f.store_string(JSON.stringify({"level": Latin.level, "money": money, "notes_done": notes_done.keys(), "mode": mode,
+				"orders": orders, "order_n": order_n}))
 
 
 func _read_save() -> Dictionary:
@@ -4888,13 +5236,20 @@ func _load_game() -> void:
 		return
 	Latin.level = int(d.get("level", 1))
 	money = int(d.get("money", 0))
+	mode = d.get("mode", "learn")
+	orders = d.get("orders", [])
+	order_n = int(d.get("order_n", 0))
+	if mode == "career":
+		Latin.level = 99
+		while orders.size() < ORDER_SLOTS:
+			orders.append(_make_order())
 	notes_done.clear()
 	for k in d.get("notes_done", []):
 		notes_done[k] = true
 	if Latin.level > 1 or notes_done.has("1:recon") or notes_done.has("1:picture"): # (a game from before the tutorials)
 		for i in TUTORIALS.size():
 			notes_done[_note_key(i + 1, "tut")] = true
-	for L in range(1, Latin.level): # medals for the levels already done
+	for L in range(1, mini(Latin.level, CAMPAIGN.size() + 1)): # medals for the levels already done
 		_award_medal(L)
 	_apply_locks()
 	_refresh_notes()
@@ -4952,7 +5307,7 @@ func _build_menu() -> void:
 		var cont := _menu_button(row, "CONTINVA", _menu_continue.bind(n))
 		cont.custom_minimum_size = Vector2(150, 56)
 		cont.add_theme_font_size_override("font_size", 20)
-		var nw := _menu_button(row, "NOVVM", _menu_new.bind(n))
+		var nw := _menu_button(row, "NOVVM", _ask_mode.bind(n))
 		nw.custom_minimum_size = Vector2(110, 56)
 		nw.add_theme_font_size_override("font_size", 20)
 		slot_rows.append([lab, cont, nw])
@@ -4987,6 +5342,38 @@ func _build_menu() -> void:
 		Sfx.play2d(self, "click", -4.0)) # (hear it as you go)
 	volume_slider.drag_ended.connect(func(_c: bool) -> void: _save_settings())
 	_menu_button(vb, "EXI", _menu_quit) # quit
+	# a new game: which sort?
+	mode_panel = PanelContainer.new()
+	mode_panel.add_theme_stylebox_override("panel", Art.panel_style(Color("#1d1a26"), 4))
+	mode_panel.set_anchors_preset(Control.PRESET_CENTER)
+	mode_panel.position = Vector2(-330, -260)
+	mode_panel.size = Vector2(660, 520)
+	mode_panel.visible = false
+	root.add_child(mode_panel)
+	var mv := VBoxContainer.new()
+	mv.add_theme_constant_override("separation", 12)
+	mode_panel.add_child(mv)
+	var mt := Label.new()
+	mt.text = "QVOMODO LVDES?"
+	mt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mt.add_theme_font_size_override("font_size", 36)
+	mt.add_theme_color_override("font_color", Color("#ffd23f"))
+	mv.add_child(mt)
+	for md in [["tutorial", "TIROCINIVM", "Tutorial: three short lessons on how the officina works."],
+			["learn", "DISCIPVLVS", "Learning: twelve levels, unlocking Latin a bit at a time."],
+			["career", "MERCATOR", "Career: everything unlocked. Endless orders for money. Words cost money, and mistakes break your parts."]]:
+		var mb := _menu_button(mv, md[1], _pick_mode.bind(md[0]))
+		mb.custom_minimum_size = Vector2(620, 58)
+		var ml := Label.new()
+		ml.text = md[2]
+		ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ml.custom_minimum_size = Vector2(620, 0)
+		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ml.add_theme_font_size_override("font_size", 18)
+		ml.add_theme_color_override("font_color", Color("#f4f1e6"))
+		mv.add_child(ml)
+	var back := _menu_button(mv, "REDI", func() -> void: mode_panel.visible = false)
+	back.custom_minimum_size = Vector2(620, 44)
 	_show_menu()
 
 
@@ -5036,7 +5423,8 @@ func _show_menu() -> void:
 		var r: Array = slot_rows[n - 1]
 		var sv := _read_slot(n)
 		var here := game_started and n == slot
-		r[0].text = ("%s · " % Latin.ROMAN[n - 1]) + ("vacuum" if sv.is_empty() else "%d denarii" % int(sv.get("money", 0))) + ("  ◂" if here else "")
+		var mname: String = {"tutorial": "TIRO", "learn": "DISC.", "career": "MERC."}.get(sv.get("mode", "learn"), "")
+		r[0].text = ("%s · " % Latin.ROMAN[n - 1]) + ("vacuum" if sv.is_empty() else "%s %d den." % [mname, int(sv.get("money", 0))]) + ("  ◂" if here else "")
 		r[1].disabled = sv.is_empty()
 	menu_resume.visible = game_started
 	menu_layer.visible = true
@@ -5071,6 +5459,22 @@ func _menu_continue(n: int) -> void:
 	_toast("%d denarii" % money)
 
 
+var mode_panel: PanelContainer
+var pending_slot := 1
+
+
+## NOVVM: first, which sort of game?
+func _ask_mode(n: int) -> void:
+	pending_slot = n
+	mode_panel.visible = true
+
+
+func _pick_mode(m: String) -> void:
+	new_mode = m
+	mode_panel.visible = false
+	_menu_new(pending_slot)
+
+
 func _menu_new(n: int) -> void:
 	if game_started and n != slot:
 		_save_game() # (keep the game you were playing, in its own slot)
@@ -5082,8 +5486,7 @@ func _menu_new(n: int) -> void:
 		get_tree().reload_current_scene()
 		return
 	_start_play()
-	get_tree().create_timer(1.0).timeout.connect(func() -> void:
-		_toast("Welcome to the officina! Your tasks are the sticky notes on the board to your left.", 6.0))
+	_begin_mode(new_mode)
 
 
 func _menu_quit() -> void:
@@ -6603,6 +7006,7 @@ func _self_test() -> void:
 	active_note = ""
 	Latin.level = 1
 	campaign_on = true
+	mode = "tutorial"
 	_apply_locks()
 	_refresh_notes()
 	var shown0 := note_nodes.keys().filter(func(k): return note_nodes[k]["node"].visible)
@@ -6629,16 +7033,17 @@ func _self_test() -> void:
 	_refresh(tcn)
 	_seat(tcn, cc)
 	await get_tree().create_timer(0.6).timeout
-	var ticks := checklist.text.count("[✓]")
+	var ticks: int = checklist.get_children().filter(func(n): return n is Label3D and n.text == "✓" and not n.is_queued_for_deletion()).size()
 	await get_tree().create_timer(2.0).timeout
 	print("T67 tutorial I: notes up first ", shown0, "  in a row at the top, tilted: ", row_top, "  taken down for the steps: ", notes_hidden,
-			"  arrow out: ", arrow_on, "  step after putting curr- on the bench: ", step1, "  ticks: ", ticks, "  done: ", notes_done.has("1:tut"),
+			"  glowing outline out: ", arrow_on, "  step after putting curr- on the bench: ", step1, "  ticks: ", ticks, "  done: ", notes_done.has("1:tut"),
 			"  next: II ", _note_state(2, "tut"), ", level I ", _note_state(1, "recon"))
 	# challenges: at level V the gender-less adjectives and the broken screen are up; the second ones wait
 	_clear_player_words()
 	disp_cord.socket_tile = null
 	for ti in TUTORIALS.size():
 		notes_done[_note_key(ti + 1, "tut")] = true
+	mode = "learn"
 	Latin.level = 5
 	_apply_locks()
 	_refresh_notes()
@@ -6690,6 +7095,73 @@ func _self_test() -> void:
 		_release()
 	print("T69 cap brought to -a's end snaps on without a click: ", snapped,
 			"   T70 the computer's cable comes out of its back: ", disp_cord.anchor().z < monitor_body.global_position.z - 0.05)
+	# the three sorts of game: what's on the board at the start of each
+	var boards := {}
+	for m9 in ["tutorial", "learn", "career"]:
+		mode = m9
+		notes_done.clear()
+		orders.clear()
+		Latin.level = 99 if m9 == "career" else 1
+		if m9 == "career":
+			for k9 in ORDER_SLOTS:
+				orders.append(_make_order())
+		_refresh_notes()
+		boards[m9] = note_nodes.keys().filter(func(k): return note_nodes[k]["node"].visible)
+	print("T71 new games: tutorial ", boards["tutorial"], "  learning ", boards["learn"], "  career ", boards["career"])
+	# career: an order done pays and comes off the board, a new one goes up
+	_clear_player_words()
+	money = 50
+	var o9: Dictionary = orders[0]
+	o9["type"] = "recon"
+	o9["words"] = [["puell", "a", "decl1"], ["curr", "t", "verb"]]
+	o9["target"] = {"verb": "curr", "person": 3, "vnum": "sg", "subj": {"stem": "puell", "num": "sg"}, "obj": null}
+	o9["pay"] = 20
+	var title0: String = o9["title"]
+	_accept_note(1, "order")
+	await get_tree().create_timer(3.0).timeout
+	var arrived9: bool = _stem_tile("puell") != null and _stem_tile("curr") != null
+	_check_order({"state": "scene", "verb": "curr", "person": 3, "vnum": "sg", "subj": {"stem": "puell", "num": "sg"}, "obj": null, "mods": [], "voice": "act"})
+	await get_tree().create_timer(1.5).timeout
+	print("T72 career order: words came: ", arrived9, "  done: money 50 -> ", money, "  still 3 orders: ", orders.size(), "  that one gone: ", orders.all(func(x): return x["title"] != title0),
+			"  sheet back to notes: ", active_note == "")
+	# career: a wrong ending isn't stopped: it goes on, sparks, and ruins both pieces
+	_clear_player_words()
+	var bs9 := _new_chunk([_new_tile("stem", "puell")], Vector3(-0.3, TABLE_Y, 0.4))
+	var be9 := _new_ending("decl2", "us")
+	var bec := _new_chunk([be9], Vector3(0.4, TABLE_Y, 0.4))
+	_refresh(bs9)
+	_refresh(bec)
+	await get_tree().create_timer(0.3).timeout
+	await _feed_drag(be9, bs9)
+	await get_tree().create_timer(0.8).timeout
+	var both_broken: bool = bs9.tiles[0].broken and be9.broken and be9.get_parent() != bs9
+	var refuse_more: bool = not Chunk.validate([bs9.tiles[0], _new_tile("ending", "a", "decl1")])["ok"]
+	# ordering costs money: a word 3, an ending 2 (into its drawer); thrown-out endings don't come back
+	var mc0 := money
+	query = "puer"
+	_order(0)
+	var mc1 := money
+	query = "-us"
+	var ends9 := _results()
+	var di9 := int(String(ends9[0][1]).split(":")[1]) if not ends9.is_empty() else -1
+	var count_in := func(di: int) -> int: return loose.filter(func(t): return is_instance_valid(t) and t.kind == "ending" and t.get_meta("drawer_i", -1) == di).size()
+	var before9: int = count_in.call(di9)
+	_order(0)
+	await get_tree().create_timer(0.3).timeout
+	var after9: int = count_in.call(di9)
+	query = ""
+	var bc9: Chunk = be9.loose_body.get_meta("chunk") if be9.loose_body else be9.get_parent()
+	if be9.loose_body:
+		bc9 = _take_loose(be9)
+	var dbe: int = be9.get_meta("drawer_i", _drawer_for("decl2"))
+	var before_tr: int = count_in.call(dbe)
+	_trash(bc9)
+	await get_tree().create_timer(0.6).timeout
+	print("T73 career mistake: -us forced onto puell-: both broken ", both_broken, "  broken stem takes nothing: ", refuse_more,
+			"   word bought: ", mc0, " -> ", mc1, "  ending bought: -> ", money, " (", ends9[0][0] if not ends9.is_empty() else "?", ", drawer ", before9, " -> ", after9, ")",
+			"   binned ending not restocked: ", count_in.call(dbe) == before_tr)
+	mode = "learn"
+	orders.clear()
 	notes_done = keep_nd
 	Latin.level = keep_lv
 	campaign_on = keep_cam

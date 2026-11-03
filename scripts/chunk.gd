@@ -167,6 +167,8 @@ func slots(for_ending: bool, w: float) -> Array:
 static func validate(list: Array) -> Dictionary:
 	for i in list.size():
 		var t: Tile = list[i]
+		if t.broken:
+			return {"ok": false, "broken": true, "msg": "It's broken. Throw it in the bin."}
 		if t.kind != "ending":
 			continue
 		if i == 0:
