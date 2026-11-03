@@ -19,10 +19,13 @@ const CABINETS := [ # under the bench's left-hand wing, facing you across the L:
 ]
 const CAB_TOP := TABLE_Y - 0.06 # underside of the bench top
 # the bench is an L: a wing comes back toward you on the right, and the drawers hang under it
-const WING_IN := -0.8 # its inside edge (the drawers face out of it, toward you)
-const WING_OUT := -1.65 # its outside edge (in line with the bench's left end)
-const WING_Z0 := 0.9
-const WING_Z1 := 3.95
+# (out past the bench's left end, against the left wall, under the notice board: from
+# where you stand, turning left brings the whole of it into view. A corner piece at the
+# back joins it to the bench. Its drawers open toward you, clear of the bench's end.)
+const WING_IN := -2.5 # its inside edge (the drawers face out of it, toward you)
+const WING_OUT := -3.35 # its outside edge, against the wall
+const WING_Z0 := -0.1
+const WING_Z1 := 2.9
 const CAB_WX := WING_IN - 0.04 - CAB_D * 0.5 # (the cabinets' centres)
 const CAB_DROP := 0.1 # the cabinets hang this far below the wing's top (a solid strip above): the top drawer's easier to reach into
 const CAB_FRONT := 0.87 # just behind the bench's front lip
@@ -364,7 +367,7 @@ func _build_table() -> void:
 	# grey steel workbench
 	_matte(Art.box(self, Vector3(3.3, 0.06, 1.8), Vector3(0, TABLE_Y - 0.03, 0), STEEL))
 	_collider(self, Vector3(3.3, 0.06, 1.8), Vector3(0, TABLE_Y - 0.03, 0), "table", L_PICK | L_WORLD)
-	Art.box(self, Vector3(1.66 - WING_IN + 0.01, 0.07, 0.04), Vector3((1.66 + WING_IN) * 0.5, TABLE_Y - 0.039, 0.91), STEEL_DARK) # front lip (just under the top, so they don't fight)
+	Art.box(self, Vector3(3.32, 0.07, 0.04), Vector3(0, TABLE_Y - 0.039, 0.91), STEEL_DARK) # front lip (just under the top, so they don't fight)
 	# the wing: the L's other arm, coming back toward you on the left
 	var wl := WING_Z1 - WING_Z0
 	var ww := WING_IN - WING_OUT
@@ -372,6 +375,13 @@ func _build_table() -> void:
 	_matte(Art.box(self, Vector3(ww, 0.06, wl + 0.02), wc, STEEL))
 	_collider(self, Vector3(ww, 0.06, wl + 0.02), wc, "table", L_PICK | L_WORLD)
 	Art.box(self, Vector3(0.04, 0.07, wl + 0.04), Vector3(WING_IN + 0.01, TABLE_Y - 0.039, wc.z), STEEL_DARK) # its lip, facing you
+	# the corner piece at the back that joins it to the bench (an L)
+	var kw := -1.65 - WING_OUT
+	var kd := WING_Z0 - WALL_Z - 0.1
+	var kc := Vector3((WING_OUT - 1.65) * 0.5, TABLE_Y - 0.03, WALL_Z + 0.1 + kd * 0.5)
+	_matte(Art.box(self, Vector3(kw, 0.06, kd), kc, STEEL))
+	_collider(self, Vector3(kw, 0.06, kd), kc, "table", L_PICK | L_WORLD)
+	Art.box(self, Vector3(-1.65 - WING_IN + 0.02, 0.07, 0.04), Vector3((WING_IN - 1.65) * 0.5, TABLE_Y - 0.039, WING_Z0 + 0.01), STEEL_DARK) # its lip
 	Art.box(self, Vector3(ww + 0.02, 0.07, 0.04), Vector3(wc.x, TABLE_Y - 0.039, WING_Z1 + 0.01), STEEL_DARK) # and its end
 	for wx in [WING_IN - 0.05, WING_OUT + 0.05]:
 		Art.box(self, Vector3(0.08, TABLE_Y - 0.06, 0.08), Vector3(wx, (TABLE_Y - 0.06) * 0.5, WING_Z1 - 0.05), STEEL_DARK)
@@ -2668,6 +2678,8 @@ func _refresh_world() -> void:
 	all.append([Transform3D(Basis.IDENTITY, Vector3(0, TABLE_Y - 0.03, 0)), Vector3(1.65, 0.03, 0.9)]) # the bench top
 	all.append([Transform3D(Basis.IDENTITY, Vector3((WING_IN + WING_OUT) * 0.5, TABLE_Y - 0.03, (WING_Z0 + WING_Z1) * 0.5)),
 			Vector3((WING_IN - WING_OUT) * 0.5, 0.03, (WING_Z1 - WING_Z0) * 0.5)]) # and its wing
+	all.append([Transform3D(Basis.IDENTITY, Vector3((WING_OUT - 1.65) * 0.5, TABLE_Y - 0.03, (WALL_Z + 0.1 + WING_Z0) * 0.5)),
+			Vector3((-1.65 - WING_OUT) * 0.5, 0.03, (WING_Z0 - WALL_Z - 0.1) * 0.5)]) # and the corner piece
 	if monitor_body: # the computer: its cable comes out of the back and goes round it
 		var mxf := monitor_body.global_transform
 		all.append([Transform3D(mxf.basis.orthonormalized(), mxf.origin), Vector3(0.4, 0.28, 0.23) * mxf.basis.get_scale().x])
@@ -2885,7 +2897,7 @@ func _reach(cd: Cord) -> float:
 	return DISP_CABLE if cd == disp_cord else CABLE
 
 
-const DISP_CABLE := 3.4
+const DISP_CABLE := 3.6
 
 
 ## A held plug can't be pulled farther than the cable reaches.
@@ -3734,6 +3746,7 @@ func _move_camera(delta: float) -> void:
 		np.x = clampf(np.x, SIDE_X + pr, RIGHT_X - pr) # the walls
 		np.z = clampf(np.z, WALL_Z + pr, FRONT_Z - pr)
 		for box in [Rect2(-1.65, -0.9, 3.3, 1.8), # the bench
+				Rect2(WING_OUT, WALL_Z, -1.65 - WING_OUT, WING_Z0 - WALL_Z), # the corner piece
 				Rect2(WING_OUT, WING_Z0, WING_IN - WING_OUT, WING_Z1 - WING_Z0), # its wing
 				Rect2(BIN_X - 0.25, BIN_Z0 - 0.3, 0.5, 2.1), # the bin stand
 				]:
@@ -4078,7 +4091,7 @@ func _build_room() -> void:
 
 # ---------------------------------------------------------------- the left wall
 
-const SIDE_X := -4.2 # the wall to your left
+const SIDE_X := -3.45 # the wall to your left (just behind the bench's wing)
 
 
 func _build_side_wall() -> void:
@@ -4086,7 +4099,7 @@ func _build_side_wall() -> void:
 	_collider(self, Vector3(0.1, 7, 12), Vector3(SIDE_X - 0.05, 3.5, 2.0), "wall", L_WORLD)
 	Art.box(self, Vector3(0.06, 0.18, 12), Vector3(SIDE_X + 0.03, 0.09, 2.0), Color("#5d6268"), 0) # skirting
 	bulletin = Node3D.new()
-	bulletin.position = Vector3(SIDE_X + 0.01, 1.7, 0.9)
+	bulletin.position = Vector3(SIDE_X + 0.01, 1.85, 1.4) # (hanging above the wing)
 	bulletin.rotation_degrees.y = 90 # faces into the room
 	add_child(bulletin)
 	var bw := 1.9
@@ -4662,9 +4675,10 @@ func _refresh_notes() -> void:
 		n["label"].text = info["title"]
 		var what: String = {"tut": "disce", "recon": "sententiae", "picture": "picturae", "chal": "certamen", "order": "ordo"}[nk[1]]
 		n["sub"].text = what + "   %d den." % info["pay"]
-	for k in shown.size(): # a row along the top of the sheet
+	for k in shown.size(): # a row along the top of the sheet (five to a row: more go in a row below)
 		var nd: Node3D = shown[k]["node"]
-		nd.position = Vector3((k - (shown.size() - 1) * 0.5) * 0.16, 0.31 - (k % 2) * 0.012, 0.01)
+		var in_row := mini(5, shown.size() - (k / 5) * 5)
+		nd.position = Vector3((k % 5 - (in_row - 1) * 0.5) * 0.16, 0.31 - (k / 5) * 0.16 - (k % 2) * 0.012, 0.01 + (k / 5) * 0.001)
 		nd.rotation_degrees.z = NOTE_TILT[k % NOTE_TILT.size()]
 	if checklist:
 		checklist.visible = active_note != ""
@@ -5928,8 +5942,8 @@ func _demo() -> void:
 		pitch = deg_to_rad(-30)
 		_place_camera()
 	if "--lview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned left to the wing's drawers
-		yaw = deg_to_rad(70)
-		pitch = deg_to_rad(-38)
+		yaw = deg_to_rad(88)
+		pitch = deg_to_rad(-14)
 		_place_camera()
 	if "--ringplug" in OS.get_cmdline_user_args(): # screenshot: the ring plug in the back of amant
 		var vp: Vector3 = made[1].tiles[0].global_position
