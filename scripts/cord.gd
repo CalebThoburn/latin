@@ -16,7 +16,8 @@ const PRONG_L_SG := 0.055 # the singular blade is longer...
 const PRONG_H := 0.012
 const PRONG_T := 0.004
 const ACC_PRONG := 0.03 # side of the square acc prong
-const DISP_R := 0.009 # round pin of the computer's display plug
+const DISP_R := 0.012 # the computer's display plug: a hollow ring (a short tube)...
+const DISP_R_IN := 0.0075 # ...this wide inside
 const CABLE_R := 0.007
 const SEGS := 34
 const SIDES := 6
@@ -211,13 +212,19 @@ func setup(t: Tile, p_interactive: bool, p_floor_y: float, spec := {}) -> Cord:
 		Art.box(plug, Vector3(PRONG_L + 0.004, AGREE_P, AGREE_P), Vector3(-PRONG_L * 0.5 + 0.002, 0, 0), Color("#e2b04a"), 0, 0.4)
 	elif kind == "abl": # a triangular prong, point up
 		Art.mesh(plug, tri_prism(TRI_R, PRONG_L + 0.004), Vector3(-PRONG_L * 0.5 + 0.002, 0, 0), metal, -1, 0.4, true)
-	if kind == "disp": # round jack: a fat round pin and a round barrel
+	if kind == "disp": # a hollow ring plug: a short metal tube (dark inside) on a round barrel
 		var pin := CylinderMesh.new()
 		pin.top_radius = DISP_R
 		pin.bottom_radius = DISP_R
 		pin.height = PRONG_L + 0.004
 		var pm := Art.mesh(plug, pin, Vector3(-PRONG_L * 0.5 + 0.002, 0, 0), metal, 2, 0.4)
 		pm.rotation_degrees.z = 90
+		var hollow := CylinderMesh.new() # (looking into its end: a dark hole inside the ring)
+		hollow.top_radius = DISP_R_IN
+		hollow.bottom_radius = DISP_R_IN
+		hollow.height = 0.012
+		var hm := Art.mesh(plug, hollow, Vector3(-PRONG_L + 0.0055, 0, 0), Color("#0d0b10"), -1)
+		hm.rotation_degrees.z = 90
 		var bar := CylinderMesh.new()
 		bar.top_radius = bt.y * 0.5
 		bar.bottom_radius = bt.y * 0.5
