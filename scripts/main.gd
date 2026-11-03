@@ -44,8 +44,9 @@ const JUMP_V := 3.2 # take-off speed: about half a metre high
 const GRAVITY := 9.8
 const GEN_LOCK := 0.1 # a held word this close to a lit genitive holder locks into it
 const HOLD_DIST := 1.0 # a picked-up piece is held this far in front of your eyes
-const CHUTE_TOP := Vector3(-1.2, 1.86, -0.97)
-const CHUTE_END := Vector3(-1.2, 1.3, -0.6)
+const CHUTE_TOP := Vector3(CORNER_X, 1.86, -0.97) # (on the corner table at the back left, with the tray: the bench is all yours)
+const CHUTE_END := Vector3(CORNER_X, 1.3, -0.6)
+const CORNER_X := -2.4 # the middle of the corner table
 const CAB_W := 0.86
 const CAB_D := 0.74
 const DR_PITCH := 0.14 # height of one drawer slot
@@ -54,10 +55,10 @@ const DR_IN_D := 0.7
 const DR_OPEN := 0.8 # drawers pull all the way out from under the bench
 const CAB_Z := CAB_FRONT - CAB_D * 0.5
 const DR_FRICTION := 0.25 # drawer floors are slippery: parts only move when a wall hits them
-const TRAY_POS := Vector3(-1.2, TABLE_Y, -0.02)
+const TRAY_POS := Vector3(CORNER_X, TABLE_Y, -0.02)
 const TRAY_W := 0.9
 const TRAY_D := 1.56
-const TRAY_RIGHT := -0.74 # anything dropped left of this goes back to the tray
+const TRAY_RIGHT := -1.62 # the main bench's left edge (left of it: the corner table, with the tray)
 const TRAY_STEMS := ["vide", "ama", "puer", "puell", "agricol", "reg", "man", "r", "duc"]
 const COPIES := 2 # of every stem in the tray and every ending in the drawers
 
@@ -390,13 +391,14 @@ func _build_table() -> void:
 			Art.box(self, Vector3(0.08, TABLE_Y - 0.06, 0.08), Vector3(sx * 1.55, (TABLE_Y - 0.06) * 0.5, sz * 0.8), STEEL_DARK)
 	Art.box(self, Vector3(3.1, 0.03, 1.5), Vector3(0, 0.2, 0), STEEL_DARK) # bottom shelf
 	# grey anti-static repair mat on the work area
-	var mx := -0.03
+	var mx := -0.4
 	var mz := 0.28
-	Art.box(self, Vector3(1.36, 0.002, 1.1), Vector3(mx, TABLE_Y, mz), Color("#3a4148"), -1)
-	for i in range(1, 7):
-		Art.box(self, Vector3(0.004, 0.0025, 1.1), Vector3(mx - 0.68 + i * 0.194, TABLE_Y, mz), Color("#56606a"), -1)
+	var mw := 2.33
+	Art.box(self, Vector3(mw, 0.002, 1.1), Vector3(mx, TABLE_Y, mz), Color("#3a4148"), -1)
+	for i in range(1, 12):
+		Art.box(self, Vector3(0.004, 0.0025, 1.1), Vector3(mx - mw * 0.5 + i * mw / 12.0, TABLE_Y, mz), Color("#56606a"), -1)
 	for i in range(1, 6):
-		Art.box(self, Vector3(1.36, 0.0025, 0.004), Vector3(mx, TABLE_Y, mz - 0.55 + i * 0.183), Color("#56606a"), -1)
+		Art.box(self, Vector3(mw, 0.0025, 0.004), Vector3(mx, TABLE_Y, mz - 0.55 + i * 0.183), Color("#56606a"), -1)
 
 
 var click_only: Array[RID] = []
@@ -1440,7 +1442,7 @@ func _tidy_desk() -> void:
 	if not singles.is_empty():
 		rows.append(singles)
 	# lay the rows out, from just in front of the monitor toward you (wrapping long ones)
-	const X0 := -0.62
+	const X0 := -1.5
 	const X1 := 1.5
 	const GAP := 0.07
 	var zs := [-0.22, 0.0, 0.22, 0.44, 0.66, 0.86, -0.46, -0.7]
@@ -1560,7 +1562,7 @@ func _update_sweep() -> void:
 	if not sweep_on:
 		return
 	var p := _plane_point(_aim(drag_mouse), TABLE_Y)
-	if sweep_x0 < -0.6 and p.x > 1.2 and absf(p.z) < 0.95:
+	if sweep_x0 < -1.0 and p.x > 1.2 and absf(p.z) < 0.95:
 		sweep_on = false
 		_sweep_desk()
 
@@ -4499,7 +4501,7 @@ func _note_key(L: int, kind: String) -> String:
 
 ## Tutorials: one note each, before the first level's notes. Their pieces come down the chute.
 var TUTORIALS := [
-	{"title": "Verbum Primum", "pay": 5, "text": "Your first verb. A verb stem will come down the chute into the tray on the left of the bench. Put it on the bench, plug the computer's yellow cable into it, and give it an ending from the ACTIVA drawer: the computer draws what it means.",
+	{"title": "Verbum Primum", "pay": 5, "text": "Your first verb. A verb stem will come down the chute into the tray on the table to your left. Put it on the bench, plug the computer's yellow cable into it, and give it an ending from the ACTIVA drawer: the computer draws what it means.",
 		"deliver": [["curr", "", "", "loose"]],
 		"steps": [
 			{"text": "Take the verb curr- out of the tray and put it on the bench.", "check": "on_bench:curr", "hl": ["tile:curr"]},
@@ -5937,6 +5939,10 @@ func _demo() -> void:
 		var hv := _screen(made[1].tiles[0].global_position)
 		_press(hv, false)
 		_drag_to(hv + Vector2(0, -60))
+	if "--cornerview" in OS.get_cmdline_user_args(): # screenshot: the bench, and the corner table with the chute and tray
+		yaw = deg_to_rad(38)
+		pitch = deg_to_rad(-30)
+		_place_camera()
 	if "--binview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned right to the bin
 		yaw = deg_to_rad(-55)
 		pitch = deg_to_rad(-30)
@@ -6328,7 +6334,7 @@ func _self_test() -> void:
 	var pcd: Cord = puer2.tiles[0].cord
 	await get_tree().create_timer(0.3).timeout
 	print("T7 bare puer has a subject cable: ", pcd != null and pcd.visible)
-	var us: Tile = await _source("ending", "um")
+	var us: Tile = await _source("ending", "um", "decl2")
 	if us:
 		await _drag(_src_pos(us), Vector3(0.0, TABLE_Y, -0.35), false, us)
 		await _feed_drag(us, puer2)
@@ -6881,7 +6887,7 @@ func _self_test() -> void:
 	# hold the button and sweep the bench from left to right: it all goes in the bin
 	var on_bench := chunks.size()
 	sweep_on = true
-	sweep_x0 = -1.0
+	sweep_x0 = -1.3
 	drag_mouse = _screen(Vector3(1.4, TABLE_Y, 0.2))
 	_update_sweep()
 	await get_tree().create_timer(2.0).timeout
