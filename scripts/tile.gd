@@ -138,7 +138,16 @@ var reel_base := "" # noun endings with a window: the fixed first letter...
 var reel_opts: Array = [] # ...and what the window can show after it
 var choice := 0
 var reel_label: Label3D = null
-var win_x := Vector2.ZERO # local x range of the window (scroll here to change it)
+var win_x := Vector2.ZERO # local x range of the prism (scroll here to turn it)
+# the reel is a prism: one option on each face, turned to bring one to the top
+var reel_node: Node3D = null
+var reel_n := 3 # its number of faces (at least three)
+var reel_a := 0.0 # its apothem (centre to the middle of a face)
+var reel_w := 0.0 # its length
+var reel_lamp_on: Node3D = null # the macron over the fixed letter: lit for a long ablative (ā, ō, ē, ū)
+var reel_lamp_off: Node3D = null
+const FACE_FONT := 50
+const COL_REEL := Color("#f1e8d2")
 var mats: Array = []
 var insert_parts: Array = [] # verb endings: the i / u insert (hidden when tucked away)
 var label: Label3D
@@ -212,8 +221,13 @@ func is_reel() -> bool:
 	return reel_base != ""
 
 
-func collapsed() -> bool:
-	return is_reel() and Latin.is_long(reel_opts[choice])
+func collapsed() -> bool: # (reels used to telescope shut into ā; now the piece stays the same size)
+	return false
+
+
+## A long-vowel option on a reel (the ablative ā, ō, ē, ū): shown as a macron.
+func long_opt(o: String) -> bool:
+	return Latin.is_long(o) or (cat == "decl2" and reel_base == "o" and o == "")
 
 
 ## Scroll the window: rebuild the piece as the new ending (it may telescope
@@ -226,6 +240,8 @@ func set_choice(i: int) -> float:
 	var old_gen_amt := gen_amt
 	var old_port := port_node
 	var old_port_amt := port_amt
+	if old_port and old_port.get_parent() != self: # (it was on the old prism: keep it where it is while it goes)
+		old_port.reparent(self)
 	for c in get_children():
 		if c == old_gen or c == old_port:
 			continue
@@ -234,6 +250,9 @@ func set_choice(i: int) -> float:
 	gen_node = null
 	port_node = null
 	reel_labels = []
+	reel_node = null
+	reel_lamp_on = null
+	reel_lamp_off = null
 	mats = []
 	insert_parts = []
 	label = null
@@ -373,17 +392,13 @@ func _setup_links() -> void:
 				nom_nums.append(r[1])
 			if r[0] == "acc" and cat != "neut": # neuter -a: subject cable only (N·PL makes it an object)
 				socket_kind = "acc"
-				socket_local = Vector3(width * 0.5, 0, 0)
-				port_node = Node3D.new()
-				port_node.position = Vector3(width * 0.5 + 0.001, 0, 0)
-				add_child(port_node)
+				socket_local = Vector3(width * 0.5, _port_y(), 0)
+				port_node = _new_port()
 				Art.box(port_node, Vector3(0.004, Cord.ACC_PRONG + 0.006, Cord.ACC_PRONG + 0.006), Vector3.ZERO, COL_HOLE, -1)
 			if r[0] == "abl" and socket_kind == "": # a triangular hole: prepositions + ablative
 				socket_kind = "abl"
-				socket_local = Vector3(width * 0.5, 0, 0)
-				port_node = Node3D.new()
-				port_node.position = Vector3(width * 0.5 + 0.001, 0, 0)
-				add_child(port_node)
+				socket_local = Vector3(width * 0.5, _port_y(), 0)
+				port_node = _new_port()
 				Art.mesh(port_node, Cord.tri_prism(Cord.TRI_R + 0.003, 0.004), Vector3.ZERO, COL_HOLE, -1, 1.0, true)
 		if not nom_nums.is_empty():
 			cord_kind = "nom"
@@ -398,6 +413,15 @@ func _setup_links() -> void:
 				cord_specs.append({"kind": "nom", "prongs": 2, "anchor": Vector3(0.025 * S, 0, -D * 0.5), "dir": cord_dir, "rest": Vector3(0.07, 0, -0.14)})
 	if cord_specs.is_empty() and cord_kind != "":
 		cord_specs.append({"kind": cord_kind, "prongs": cord_prongs, "anchor": cord_anchor, "dir": cord_dir})
+	if is_reel() and kind == "ending": # the subject cable lives in a little hole, and pops out when a nominative's chosen
+		var holes := []
+		for sp in cord_specs:
+			if sp["kind"] == "nom":
+				holes.append(sp["anchor"])
+		if holes.is_empty() and reel_opts.any(func(o): return Latin.has_case(cat, Latin.reel_form(reel_base, o), "nom")):
+			holes.append(Vector3(0, 0, -D * 0.5))
+		for hp: Vector3 in holes:
+			Art.box(self, Vector3(0.026, 0.014, 0.002), hp + Vector3(0, 0, -0.0005 if hp.z < 0.0 else 0.0005), COL_HOLE, -1)
 	# adjectives plug into nouns from above: a gender jack on every noun stem (where
 	# the word is), and an agreement socket on whatever carries the noun's case
 	if kind == "stem" and Latin.STEMS[key]["pos"] == "noun":
@@ -405,9 +429,10 @@ func _setup_links() -> void:
 		if Latin.STEMS[key].get("bare_nom", false): # puer, rēx: the bare stem is the case-bearer
 			_top_socket("agree", Vector3(width * 0.3, H * 0.5, -D * 0.2))
 	elif kind == "ending" and cat != "verb" and not cat.begins_with("adj"):
-		_top_socket("agree", Vector3(-width * 0.25, H * 0.5, -D * 0.25))
+		var sx1 := width * 0.5 - (reel_w + 0.004 if is_reel() else 0.0) # (on the board, not the prism)
+		_top_socket("agree", Vector3(lerpf(-width * 0.5, sx1, 0.25), H * 0.5, -D * 0.25))
 		if Latin.has_case(cat, key, "dat"): # a dative: a round purple-ringed hole for a dative verb's cable
-			_top_socket("dat", Vector3(width * 0.25, H * 0.5, -D * 0.25))
+			_top_socket("dat", Vector3(lerpf(-width * 0.5, sx1, 0.75), H * 0.5, -D * 0.25))
 
 
 ## A socket in the top face of a piece (its hole points up).
@@ -594,39 +619,50 @@ func _build_block() -> void:
 		width = maxf(width, text_w(nom, FONT_SIZE) + 0.065 * S)
 	var w_base := 0.0
 	var w_win := 0.0
-	if is_reel() and not collapsed():
+	if is_reel():
 		w_base = text_w("-" + reel_base, FONT_SIZE)
 		for o in reel_opts:
-			if o != "ā":
-				w_win = maxf(w_win, text_w(o, FONT_SIZE))
-		w_win = maxf(0.05 * S, w_win + 0.03 * S)
-		width = w_base + w_win + 0.075 * S
+			w_win = maxf(w_win, text_w(o, FACE_FONT))
+		w_win = maxf(0.05 * S, w_win + 0.026 * S)
+		width = w_base + w_win + 0.06 * S
 	var board := color_for(kind, key, cat)
-	var mi := Art.box(self, Vector3(width, H, D), Vector3.ZERO, board, 0, 0.7)
+	var slab_w := width - (w_win + 0.004 if w_win > 0.0 else 0.0) # (a reel's prism takes the right end)
+	var mi := Art.box(self, Vector3(slab_w, H, D), Vector3(-(width - slab_w) * 0.5, 0, 0), board, 0, 0.7)
 	mats.append(mi.material_override)
+	var n0 := get_child_count()
+	var full := width
+	width = slab_w # (the traces are on the board, not over the prism)
 	_circuit(board)
+	width = full
+	for i in range(n0, get_child_count()):
+		var dc := get_child(i)
+		if dc is Node3D:
+			dc.position.x -= (full - slab_w) * 0.5
+	if w_win > 0.0: # a cradle the prism sits half sunk in
+		var cr := Art.box(self, Vector3(w_win + 0.004, H * 0.5, D), Vector3(width * 0.5 - (w_win + 0.004) * 0.5, -H * 0.25, 0), board.darkened(0.12), 0, 0.7)
+		mats.append(cr.material_override)
 	label = Art.label3d("", FONT_SIZE, PIXEL)
 	label.modulate = COL_SILK
 	label.outline_size = 0
 	label.rotation_degrees = Vector3(-90, 0, 0)
 	label.position = Vector3(0, H * 0.5 + 0.002, 0.004)
 	add_child(label)
-	if w_win > 0.0: # the window, with the reel showing through it
+	if w_win > 0.0: # the prism, at the right end: an option on each face
 		label.position.x = -width * 0.5 + 0.03 + w_base * 0.5
-		var cx := width * 0.5 - 0.022 - w_win * 0.5
+		var cx := width * 0.5 - w_win * 0.5
 		win_x = Vector2(cx - w_win * 0.5, cx + w_win * 0.5)
-		var top := H * 0.5
-		Art.box(self, Vector3(w_win, 0.003, D * 0.62), Vector3(cx, top + 0.0012, 0), Color("#14121a"), -1)
-		for sz in [-1, 1]: # metal frame
-			Art.box(self, Vector3(w_win + 0.012, 0.005, 0.006), Vector3(cx, top + 0.002, sz * (D * 0.31 + 0.003)), COL_TRACE, -1)
-		for sx in [-1, 1]:
-			Art.box(self, Vector3(0.006, 0.005, D * 0.62 + 0.012), Vector3(cx + sx * (w_win * 0.5 + 0.003), top + 0.002, 0), COL_TRACE, -1)
 		reel_cx = cx
-		for o in reel_opts: # every option sits on the drum; only the ones near the window show
-			var rl := Art.label3d(o, FONT_SIZE, PIXEL)
-			rl.rotation_degrees = Vector3(-90, 0, 0)
-			add_child(rl)
-			reel_labels.append(rl)
+		_build_prism(cx, w_win)
+		# the macron over the fixed letter: it lights up for a long ablative
+		var lamps := Node3D.new()
+		add_child(lamps)
+		reel_lamp_off = Node3D.new()
+		lamps.add_child(reel_lamp_off)
+		reel_lamp_on = Node3D.new()
+		lamps.add_child(reel_lamp_on)
+		var lw := text_w(reel_base, FONT_SIZE) * 0.8
+		Art.box(reel_lamp_off, Vector3(lw, 0.0016, 0.0045), Vector3.ZERO, board.darkened(0.35), -1)
+		Art.box(reel_lamp_on, Vector3(lw, 0.0024, 0.0055), Vector3.ZERO, Color("#fff27a"), -1)
 		_layout_reel()
 	else:
 		win_x = Vector2.ZERO
@@ -875,27 +911,121 @@ func port_open() -> bool:
 	return port_node != null and port_goal > 0.5 and port_amt > 0.95
 
 
-## Place the reel's options round the drum at its current turn.
+## Where an ending's square / triangular hole is: on a reel, in the middle of the
+## prism's end (it turns with the prism); otherwise in the middle of the end.
+func _port_y() -> float:
+	return reel_a - H * 0.5 if reel_node else 0.0
+
+
+func _new_port() -> Node3D:
+	var pn := Node3D.new()
+	if reel_node: # on the prism's end cap, turned to sit square when this face is on top
+		pn.position = Vector3(reel_w * 0.5 + 0.001, 0, 0)
+		pn.rotation.x = TAU * choice / reel_n
+		reel_node.add_child(pn)
+	else:
+		pn.position = Vector3(width * 0.5 + 0.001, 0, 0)
+		add_child(pn)
+	return pn
+
+
+## The prism: an N-sided prism along x (N = the options, at least three), each
+## option printed on its own face (a long ablative as a macron), turned so the
+## chosen face is on top. Locked options show a cross.
+func _build_prism(cx: float, plen: float) -> void:
+	var n := maxi(3, reel_opts.size())
+	reel_n = n
+	reel_w = plen
+	var need := FACE_FONT * PIXEL * 0.8 # (each face wide enough for its writing)
+	var a := maxf(H * 0.5 + 0.002, need / (2.0 * tan(PI / n)))
+	reel_a = a
+	reel_node = Node3D.new()
+	reel_node.position = Vector3(cx, a - H * 0.5, 0) # (its bottom face level with the piece's underside)
+	add_child(reel_node)
+	var pm := Art.mesh(reel_node, _prism_mesh(n, a, plen), Vector3.ZERO, COL_REEL, 0, 0.6)
+	mats.append(pm.material_override)
+	for k in n:
+		var facet := Node3D.new() # (its +y is this face's outward normal)
+		facet.rotation.x = TAU * k / n
+		reel_node.add_child(facet)
+		var o: String = reel_opts[k] if k < reel_opts.size() else "~"
+		var lab := Art.label3d("", FACE_FONT, PIXEL)
+		lab.modulate = INK_REEL
+		lab.outline_size = 0
+		lab.rotation_degrees = Vector3(-90, 0, 0)
+		lab.position = Vector3(0, a + 0.0012, 0.003)
+		facet.add_child(lab)
+		reel_labels.append(lab)
+		if k < reel_opts.size() and long_opt(o): # a long ablative: a macron on its face
+			var bar := Art.box(facet, Vector3(plen * 0.45, 0.002, 0.005), Vector3(0, a + 0.001, 0), INK_REEL, -1)
+			bar.set_meta("macron", k)
+		for side in [-1.0, 1.0]: # thin rails along the face's edges
+			var ang := PI / n
+			var e := Vector3(0, a, side * a * tan(ang))
+			Art.box(facet, Vector3(plen, 0.0015, 0.0015), e, COL_REEL.darkened(0.25), -1)
+
+
+static func _prism_mesh(n: int, a: float, plen: float) -> ArrayMesh:
+	var r := a / cos(PI / n)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hx := plen * 0.5
+	var corner := func(i: int, x: float) -> Vector3: # (corners between the faces)
+		var t := TAU * (i + 0.5) / n
+		return Vector3(x, cos(t) * r, sin(t) * r)
+	for i in n: # the sides
+		var nrm := Vector3(0, cos(TAU * i / n), sin(TAU * i / n))
+		var c0: Vector3 = corner.call(i - 1, -hx)
+		var c1: Vector3 = corner.call(i, -hx)
+		var c2: Vector3 = corner.call(i, hx)
+		var c3: Vector3 = corner.call(i - 1, hx)
+		for v in [c0, c2, c1, c0, c3, c2]:
+			st.set_normal(nrm)
+			st.add_vertex(v)
+	for e in [-1.0, 1.0]: # the two ends
+		for i in n:
+			var p0 := Vector3(e * hx, 0, 0)
+			var p1: Vector3 = corner.call(i - 1, e * hx)
+			var p2: Vector3 = corner.call(i, e * hx)
+			var tri := [p0, p1, p2] if e > 0.0 else [p0, p2, p1]
+			for v in tri:
+				st.set_normal(Vector3(e, 0, 0))
+				st.add_vertex(v)
+	return st.commit()
+
+
+const INK_REEL := Color("#2a2230")
+
+
+## Turn the prism to the reel's current position, and write each face (a cross
+## on the ones not unlocked yet); light the macron if a long ablative's on top.
 func _layout_reel() -> void:
-	var n := reel_opts.size()
-	if collapsed(): # no window: the label previews what it will open up into
-		if label:
-			var i := posmod(roundi(reel_pos), n)
-			var t := Latin.reel_form(reel_base, reel_opts[i])
-			label.text = t if joined else "-" + t
+	if reel_node == null:
 		return
-	for i in reel_labels.size():
-		var rl: Label3D = reel_labels[i]
-		var o := fposmod(i - reel_pos + n * 0.5, n) - n * 0.5
-		var ao := absf(o)
-		rl.visible = ao < 1.3
-		rl.position = Vector3(reel_cx, H * 0.5 + 0.005 - ao * 0.001, 0.042 * S * o + 0.004)
-		rl.scale = Vector3.ONE * lerpf(1.0, 0.55, minf(1.0, ao))
-		var c := Color("#ffd23f").lerp(Color(1, 0.85, 0.3), minf(1.0, ao))
-		c.a = clampf(1.0 - ao * 0.72, 0.0, 1.0)
-		if not Latin.ending_unlocked(cat, Latin.reel_form(reel_base, reel_opts[i])): # not unlocked yet: not on the drum
-			rl.visible = false
-		rl.modulate = c
+	reel_node.rotation.x = -reel_pos * TAU / reel_n
+	for k in reel_labels.size():
+		var lab: Label3D = reel_labels[k]
+		if k >= reel_opts.size():
+			lab.text = ""
+			continue
+		var o: String = reel_opts[k]
+		var ok := Latin.ending_unlocked(cat, Latin.reel_form(reel_base, o))
+		lab.text = ("✕" if not ok else ("" if long_opt(o) else ("·" if o == "" else o)))
+		lab.modulate = INK_REEL if ok else Color("#a09888")
+	for ch in reel_node.get_children(): # (the macron bars on faces that aren't unlocked are hidden)
+		for b in ch.get_children():
+			if b.has_meta("macron"):
+				var kk: int = b.get_meta("macron")
+				b.visible = Latin.ending_unlocked(cat, Latin.reel_form(reel_base, reel_opts[kk]))
+	var top := posmod(roundi(reel_pos), reel_opts.size()) if not reel_opts.is_empty() else 0
+	var lit := long_opt(reel_opts[top]) and absf(reel_pos - roundf(reel_pos)) < 0.2
+	if reel_lamp_on and label:
+		reel_lamp_on.visible = lit
+		reel_lamp_off.visible = not lit
+		# over the fixed letter, at the right end of the printed "-a" / "a"
+		var lp := label.position + Vector3(text_w(label.text, FONT_SIZE) * 0.5 - text_w(reel_base, FONT_SIZE) * 0.5, 0, -FONT_SIZE * PIXEL * 0.36)
+		lp.y = H * 0.5 + 0.0022
+		reel_lamp_on.get_parent().position = lp
 
 
 ## Broken by a mistake: scorched, cracked, its writing gone grey. It won't go on

@@ -4466,6 +4466,17 @@ var CAMPAIGN := [
 ]
 
 
+func _lamp_test(pa: Tile) -> String:
+	var res := []
+	for j in pa.reel_opts.size():
+		pa.reel_pos = j
+		pa._layout_reel()
+		res.append(("ā" if pa.long_opt(pa.reel_opts[j]) else pa.reel_opts[j]) + ":" + ("on" if pa.reel_lamp_on.visible else "off"))
+	pa.reel_pos = pa.choice
+	pa._layout_reel()
+	return " ".join(res)
+
+
 static func _blind_col() -> String:
 	Tile.blind = true
 	var c := Tile.color_for("stem", "puell", "").to_html(false)
@@ -5699,6 +5710,11 @@ func _apply_locks() -> void:
 	for t: Tile in _all_tiles():
 		if t.is_reel():
 			t._layout_reel()
+			if not Latin.ending_unlocked(t.cat, t.key): # turned to one that isn't unlocked yet (-ō before the ablative): on to one that is
+				for j in t.reel_opts.size():
+					if Latin.ending_unlocked(t.cat, Latin.reel_form(t.reel_base, t.reel_opts[j])):
+						_rechoose(t, j - t.choice)
+						break
 	for key in bin_lids: # adapter bins
 		var bn: Node3D = bin_lids[key]
 		var show := Latin.adapter_unlocked(key)
@@ -5939,6 +5955,14 @@ func _demo() -> void:
 		var hv := _screen(made[1].tiles[0].global_position)
 		_press(hv, false)
 		_drag_to(hv + Vector2(0, -60))
+	if "--reelview" in OS.get_cmdline_user_args(): # screenshot: prism endings up close (one turned to the ablative -ā)
+		var ab := _new_chunk([_new_tile("stem", "silv"), _new_ending("decl1", "ā")], Vector3(-0.55, TABLE_Y, 0.62))
+		_refresh(ab)
+		var mid: Vector3 = made[0].tiles[1].global_position
+		player = Vector3(mid.x + 0.05, 0, mid.z + 0.7)
+		yaw = 0.0
+		pitch = deg_to_rad(-58)
+		_place_camera()
 	if "--cornerview" in OS.get_cmdline_user_args(): # screenshot: the bench, and the corner table with the chute and tray
 		yaw = deg_to_rad(38)
 		pitch = deg_to_rad(-30)
@@ -6438,7 +6462,8 @@ func _self_test() -> void:
 			var hh := _ray(wheel.position)
 			print("   dbg T15 notch missed: kind ", hh["collider"].get_meta("kind", "?") if not hh.is_empty() else null, " tile_layer=", pa.body.collision_layer, " pos=", pa.global_position, " basis=", pa.global_basis.y, " plug=", hh["collider"].has_meta("plug") if not hh.is_empty() else false, " cool=", reel_cool)
 		forms.append(made[0].analysis.get("latin", "?") + (" (" + str(snappedf(pa.width, 0.001)) + ")" if pa.collapsed() else ""))
-	print("T15 scrolling puella's window: ", forms, "  nom cable at -a: ", had_cable, "  collapsed to ā narrower: ", w0)
+	print("T15 turning puella's prism: ", forms, "  nom cable at -a: ", had_cable, "  same size all the way round: ", is_equal_approx(w0, pa.width),
+			"   faces: ", pa.reel_n, "  macron lit on -ā: ", _lamp_test(pa))
 	# search is by stem
 	query = "aud"
 	print("T16 search 'aud': ", _results())
@@ -6921,8 +6946,8 @@ func _self_test() -> void:
 	a_reel.reel_idle = 1.0
 	reel_spinning.append(a_reel)
 	await get_tree().create_timer(1.5).timeout
-	print("T51 a reel turned to the locked -am skips on to an unlocked form: ", a_reel.key, "  locked options shown on its drum: ",
-			a_reel.reel_labels.filter(func(l): return l.visible and not Latin.ending_unlocked("decl1", l.text) and not Latin.ending_unlocked("decl1", "a" + l.text)).size())
+	print("T51 a reel turned to the locked -am skips on to an unlocked form: ", a_reel.key, "  locked faces crossed out: ",
+			a_reel.reel_labels.filter(func(l): return l.text == "✕").size(), " of ", a_reel.reel_opts.filter(func(o): return not Latin.ending_unlocked("decl1", Latin.reel_form("a", o))).size(), " locked")
 	_discard(ar)
 	_open_note(1, "recon")
 	var panel_up: bool = note_panel.visible and note_accept.text == "ACCIPE"
@@ -6943,6 +6968,8 @@ func _self_test() -> void:
 	await get_tree().create_timer(0.5).timeout
 	query = ""
 	var l2 := _results().map(func(r): return r[1])
+	var o_keys := loose.filter(func(t): return is_instance_valid(t) and t.is_reel() and t.cat == "decl2" and t.reel_base == "o").map(func(t): return t.key)
+	print("   T53b at level II the o-pieces show -ōs, not the locked -ō: ", o_keys.all(func(k): return k == "os"), " ", o_keys.slice(0, 3))
 	print("T53 notes done: money ", m1, " -> ", money, "  level ", Latin.level, "  ama unlocked: ", "ama" in l2, "  -am unlocked: ", Latin.ending_unlocked("decl1", "am"),
 			"  note II open: ", _note_state(2, "recon"), "  medal: ", badge_slots[0].get_child_count() > 2)
 	# saving: level, money and the notes done come back as they were
