@@ -370,7 +370,7 @@ func _floor_at(p: Vector3) -> float:
 
 func _simulate(a: Vector3, ta: Vector3, b: Vector3, tb: Vector3, delta: float) -> bool:
 	var dist := a.distance_to(b)
-	var length := clampf(dist * 1.12 + 0.05, 0.08, 3.9) # a little slack, so it sags (the computer's is long)
+	var length := clampf(dist * 1.12 + 0.05, 0.08, 4.5) # a little slack, so it sags (the computer's is long)
 	var seg := length / (NP - 1)
 	var ends_moved := a.distance_to(_ea) > 0.0002 or b.distance_to(_eb) > 0.0002
 	if pts.size() != NP or a.distance_to(pts[0]) > 0.6 or b.distance_to(pts[NP - 1]) > 0.6:

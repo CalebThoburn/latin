@@ -22,10 +22,10 @@ const CAB_TOP := TABLE_Y - 0.06 # underside of the bench top
 # (out past the bench's left end, against the left wall, under the notice board: from
 # where you stand, turning left brings the whole of it into view. A corner piece at the
 # back joins it to the bench. Its drawers open toward you, clear of the bench's end.)
-const WING_IN := -2.5 # its inside edge (the drawers face out of it, toward you)
-const WING_OUT := -3.35 # its outside edge, against the wall
-const WING_Z0 := -0.1
-const WING_Z1 := 2.9
+const WING_IN := -2.3 # its inside edge (the drawers face out of it, toward you)
+const WING_OUT := -3.15 # its outside edge, against the wall
+const WING_Z0 := 0.95 # (starts just past the bench's front edge: none of its drawers hidden behind the bench)
+const WING_Z1 := 3.95
 const CAB_WX := WING_IN - 0.04 - CAB_D * 0.5 # (the cabinets' centres)
 const CAB_DROP := 0.1 # the cabinets hang this far below the wing's top (a solid strip above): the top drawer's easier to reach into
 const CAB_FRONT := 0.87 # just behind the bench's front lip
@@ -2897,7 +2897,7 @@ func _reach(cd: Cord) -> float:
 	return DISP_CABLE if cd == disp_cord else CABLE
 
 
-const DISP_CABLE := 3.6
+const DISP_CABLE := 4.0
 
 
 ## A held plug can't be pulled farther than the cable reaches.
@@ -4091,7 +4091,7 @@ func _build_room() -> void:
 
 # ---------------------------------------------------------------- the left wall
 
-const SIDE_X := -3.45 # the wall to your left (just behind the bench's wing)
+const SIDE_X := -3.25 # the wall to your left (just behind the bench's wing)
 
 
 func _build_side_wall() -> void:
@@ -4099,7 +4099,7 @@ func _build_side_wall() -> void:
 	_collider(self, Vector3(0.1, 7, 12), Vector3(SIDE_X - 0.05, 3.5, 2.0), "wall", L_WORLD)
 	Art.box(self, Vector3(0.06, 0.18, 12), Vector3(SIDE_X + 0.03, 0.09, 2.0), Color("#5d6268"), 0) # skirting
 	bulletin = Node3D.new()
-	bulletin.position = Vector3(SIDE_X + 0.01, 1.85, 1.4) # (hanging above the wing)
+	bulletin.position = Vector3(SIDE_X + 0.01, 1.85, (WING_Z0 + WING_Z1) * 0.5) # (hanging above the wing)
 	bulletin.rotation_degrees.y = 90 # faces into the room
 	add_child(bulletin)
 	var bw := 1.9
@@ -5942,8 +5942,8 @@ func _demo() -> void:
 		pitch = deg_to_rad(-30)
 		_place_camera()
 	if "--lview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned left to the wing's drawers
-		yaw = deg_to_rad(88)
-		pitch = deg_to_rad(-14)
+		yaw = deg_to_rad(108)
+		pitch = deg_to_rad(-16)
 		_place_camera()
 	if "--ringplug" in OS.get_cmdline_user_args(): # screenshot: the ring plug in the back of amant
 		var vp: Vector3 = made[1].tiles[0].global_position
