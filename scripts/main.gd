@@ -8,21 +8,27 @@ const SNAP_Z := 0.11
 const WALL_Z := -1.0 # front of the pegboard wall, right behind the bench
 # ending cabinets hang under the bench top: noun declensions I-II on the left,
 # III-V in the middle, verb endings on the right
-const CABINETS := [ # under the bench's right-hand wing, facing you across the L: turn right to see them
-	# (each one's drawers top-down in the order they're unlocked, so a cabinet only ever grows downward)
-	{"x": WING_X0 + 0.04 + CAB_D * 0.5, "z": WING_Z0 + 0.05 + 0.37, "yaw": -PI * 0.5, "w": 0.74, "cats": ["verb", "decl1", "decl2", "verbp"]},
-	{"x": WING_X0 + 0.04 + CAB_D * 0.5, "z": WING_Z0 + 0.05 + 0.74 + 0.05 + 0.33, "yaw": -PI * 0.5, "w": 0.66, "cats": ["decl3", "decl4", "decl5", "decl12", "decl34"]},
+const CABINETS := [ # under the bench's left-hand wing, facing you across the L: turn left to see them.
+	# In the old order, left to right as you look at them: I·II, -īs, III·IV·V, -ibus, the verbs (nearest the bench).
+	# (Each one's drawers top-down in the order they're unlocked, so a cabinet only ever grows downward.)
+	{"x": CAB_WX, "z": WING_Z0 + 0.05 + 0.37, "yaw": PI * 0.5, "top": CAB_TOP - CAB_DROP, "w": 0.74, "cats": ["verb", "verbp"]},
+	{"x": CAB_WX, "z": WING_Z0 + 0.05 + 0.74 + 0.04 + 0.17, "yaw": PI * 0.5, "top": CAB_TOP - CAB_DROP, "w": 0.34, "cats": ["decl34"]},
+	{"x": CAB_WX, "z": WING_Z0 + 0.05 + 0.74 + 0.04 + 0.34 + 0.04 + 0.33, "yaw": PI * 0.5, "top": CAB_TOP - CAB_DROP, "w": 0.66, "cats": ["decl3", "decl4", "decl5"]},
+	{"x": CAB_WX, "z": WING_Z0 + 0.05 + 0.74 + 0.04 + 0.34 + 0.04 + 0.66 + 0.04 + 0.17, "yaw": PI * 0.5, "top": CAB_TOP - CAB_DROP, "w": 0.34, "cats": ["decl12"]},
+	{"x": CAB_WX, "z": WING_Z0 + 0.05 + 0.74 + 0.04 + 0.34 + 0.04 + 0.66 + 0.04 + 0.34 + 0.04 + 0.33, "yaw": PI * 0.5, "top": CAB_TOP - CAB_DROP, "w": 0.66, "cats": ["decl1", "decl2"]},
 ]
 const CAB_TOP := TABLE_Y - 0.06 # underside of the bench top
 # the bench is an L: a wing comes back toward you on the right, and the drawers hang under it
-const WING_X0 := 0.8 # its inside edge (the drawers face out of it, toward you)
-const WING_X1 := 1.65
+const WING_IN := -0.8 # its inside edge (the drawers face out of it, toward you)
+const WING_OUT := -1.65 # its outside edge (in line with the bench's left end)
 const WING_Z0 := 0.9
-const WING_Z1 := 2.45
+const WING_Z1 := 3.95
+const CAB_WX := WING_IN - 0.04 - CAB_D * 0.5 # (the cabinets' centres)
+const CAB_DROP := 0.1 # the cabinets hang this far below the wing's top (a solid strip above): the top drawer's easier to reach into
 const CAB_FRONT := 0.87 # just behind the bench's front lip
 # delivery chute: from a hatch in the wall down into the back of the stem tray
 # big rubbish bin standing on the floor next to the bench
-const TRASH_POS := Vector3(-2.4, 0.0, 1.15) # out past the left end of the bench: you can see into it from there
+const TRASH_POS := Vector3(2.4, 0.0, 1.15) # out past the right end of the bench: you can see into it from there
 const TRASH_R := 0.3
 const TRASH_H := 0.82
 # first person: WASD to walk, mouse to look, click / E to pick up and put down
@@ -358,16 +364,16 @@ func _build_table() -> void:
 	# grey steel workbench
 	_matte(Art.box(self, Vector3(3.3, 0.06, 1.8), Vector3(0, TABLE_Y - 0.03, 0), STEEL))
 	_collider(self, Vector3(3.3, 0.06, 1.8), Vector3(0, TABLE_Y - 0.03, 0), "table", L_PICK | L_WORLD)
-	Art.box(self, Vector3(1.65 + WING_X0 + 0.01, 0.07, 0.04), Vector3((WING_X0 - 1.65) * 0.5, TABLE_Y - 0.039, 0.91), STEEL_DARK) # front lip (just under the top, so they don't fight)
-	# the wing: the L's other arm, coming back toward you on the right
+	Art.box(self, Vector3(1.66 - WING_IN + 0.01, 0.07, 0.04), Vector3((1.66 + WING_IN) * 0.5, TABLE_Y - 0.039, 0.91), STEEL_DARK) # front lip (just under the top, so they don't fight)
+	# the wing: the L's other arm, coming back toward you on the left
 	var wl := WING_Z1 - WING_Z0
-	var ww := WING_X1 - WING_X0
-	var wc := Vector3((WING_X0 + WING_X1) * 0.5, TABLE_Y - 0.03, (WING_Z0 + WING_Z1) * 0.5)
+	var ww := WING_IN - WING_OUT
+	var wc := Vector3((WING_IN + WING_OUT) * 0.5, TABLE_Y - 0.03, (WING_Z0 + WING_Z1) * 0.5)
 	_matte(Art.box(self, Vector3(ww, 0.06, wl + 0.02), wc, STEEL))
 	_collider(self, Vector3(ww, 0.06, wl + 0.02), wc, "table", L_PICK | L_WORLD)
-	Art.box(self, Vector3(0.04, 0.07, wl + 0.04), Vector3(WING_X0 - 0.01, TABLE_Y - 0.039, wc.z), STEEL_DARK) # its lip, facing you
+	Art.box(self, Vector3(0.04, 0.07, wl + 0.04), Vector3(WING_IN + 0.01, TABLE_Y - 0.039, wc.z), STEEL_DARK) # its lip, facing you
 	Art.box(self, Vector3(ww + 0.02, 0.07, 0.04), Vector3(wc.x, TABLE_Y - 0.039, WING_Z1 + 0.01), STEEL_DARK) # and its end
-	for wx in [WING_X0 + 0.05, WING_X1 - 0.05]:
+	for wx in [WING_IN - 0.05, WING_OUT + 0.05]:
 		Art.box(self, Vector3(0.08, TABLE_Y - 0.06, 0.08), Vector3(wx, (TABLE_Y - 0.06) * 0.5, WING_Z1 - 0.05), STEEL_DARK)
 	for sx in [-1, 1]:
 		for sz in [-1, 1]:
@@ -840,6 +846,8 @@ func _cab_shell(ci: int, m: int) -> void:
 	Art.box(shell, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), red_dark)
 	_collider(shell, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), "cabinet", L_WORLD | L_BLOCK)
 	Art.box(shell, Vector3(cw, 0.01, CAB_D), Vector3(0, h - 0.005, 0), red_dark)
+	Art.box(shell, Vector3(cw, CAB_DROP, CAB_D), Vector3(0, h + CAB_DROP * 0.5, 0), red) # (up to the wing: the cabinet hangs a bit lower)
+	_collider(shell, Vector3(cw, CAB_DROP, CAB_D), Vector3(0, h + CAB_DROP * 0.5, 0), "cabinet", L_WORLD | L_BLOCK)
 	for k in range(1, m): # shelves between the drawers
 		Art.box(shell, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, 0), STEEL_DARK, -1)
 		_collider(shell, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, -0.015), "cabinet", L_WORLD | L_BLOCK)
@@ -1536,13 +1544,13 @@ func _organize(i: int) -> void:
 
 
 ## Held the button down on an empty bit of the bench and dragged all the way
-## across it, right to left: everything on the bench is swept off into the bin
-## (it stands past the left end).
+## across it, left to right: everything on the bench is swept off into the bin
+## (it stands past the right end).
 func _update_sweep() -> void:
 	if not sweep_on:
 		return
 	var p := _plane_point(_aim(drag_mouse), TABLE_Y)
-	if sweep_x0 > 0.5 and p.x < -0.6 and absf(p.z) < 0.95:
+	if sweep_x0 < -0.6 and p.x > 1.2 and absf(p.z) < 0.95:
 		sweep_on = false
 		_sweep_desk()
 
@@ -1561,14 +1569,14 @@ func _sweep_desk() -> void:
 		if rp.y > TABLE_Y - 0.01 and rp.y < TABLE_Y + 0.25 and rp.x > TRAY_RIGHT and absf(rp.x) < 1.65 and absf(rp.z) < 0.9:
 			seen.append(t.loose_body)
 			items.append(_take_loose(t))
-	items.sort_custom(func(a, b): return a.position.x < b.position.x) # the ones nearest the bin go first
+	items.sort_custom(func(a, b): return a.position.x > b.position.x) # the ones nearest the bin go first
 	var k := 0
 	for c: Chunk in items:
 		owned_by.erase(c)
 		_remove_chunk(c)
 		var tw := c.create_tween()
 		tw.tween_interval(0.03 * k)
-		tw.tween_property(c, "position:x", -1.7 - c.width, 0.12 + (c.position.x + 1.7) * 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(c, "position:x", 1.66, 0.12 + (1.66 - c.position.x) * 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tw.tween_callback(_trash.bind(c))
 		k += 1
 	if not items.is_empty():
@@ -2152,8 +2160,9 @@ func _shove(d: Chunk, skip) -> void:
 				var mtv := _overlap(m, c)
 				if mtv != Vector3.ZERO:
 					c.position += mtv * 1.02
-					c.position.x = clampf(c.position.x, TRAY_RIGHT + 0.02, 1.65 - c.width)
-					c.position.z = clampf(c.position.z, -0.85, 0.85)
+					if c.position.z < WING_Z0: # (on the main bench, not out on the wing)
+						c.position.x = clampf(c.position.x, TRAY_RIGHT + 0.02, 1.65 - c.width)
+						c.position.z = clampf(c.position.z, -0.85, 0.85)
 					if not c in next:
 						next.append(c)
 		if next.is_empty():
@@ -2657,8 +2666,8 @@ func _refresh_world() -> void:
 		sig += t.origin.dot(Vector3(1.3, 3.7, 7.1)) + t.basis.x.dot(Vector3(2.9, 5.3, 1.1)) + t.basis.y.dot(Vector3(0.7, 1.9, 4.3))
 	var all := boxes.duplicate()
 	all.append([Transform3D(Basis.IDENTITY, Vector3(0, TABLE_Y - 0.03, 0)), Vector3(1.65, 0.03, 0.9)]) # the bench top
-	all.append([Transform3D(Basis.IDENTITY, Vector3((WING_X0 + WING_X1) * 0.5, TABLE_Y - 0.03, (WING_Z0 + WING_Z1) * 0.5)),
-			Vector3((WING_X1 - WING_X0) * 0.5, 0.03, (WING_Z1 - WING_Z0) * 0.5)]) # and its wing
+	all.append([Transform3D(Basis.IDENTITY, Vector3((WING_IN + WING_OUT) * 0.5, TABLE_Y - 0.03, (WING_Z0 + WING_Z1) * 0.5)),
+			Vector3((WING_IN - WING_OUT) * 0.5, 0.03, (WING_Z1 - WING_Z0) * 0.5)]) # and its wing
 	if monitor_body: # the computer: its cable comes out of the back and goes round it
 		var mxf := monitor_body.global_transform
 		all.append([Transform3D(mxf.basis.orthonormalized(), mxf.origin), Vector3(0.4, 0.28, 0.23) * mxf.basis.get_scale().x])
@@ -2781,7 +2790,7 @@ func _update_plugs(delta: float) -> void:
 		var o := cd.free_xf.origin
 		var a := cd.anchor()
 		var d := Vector3(o.x - a.x, 0, o.z - a.z)
-		var reach := TRAIL if carried else CABLE # a carried word drags its plug along behind it
+		var reach := TRAIL if carried else _reach(cd) # a carried word drags its plug along behind it
 		if d.length() > reach:
 			var to := Vector3(a.x, o.y, a.z) + d.normalized() * reach
 			o = _sweep(b, o, to, _solid_boxes(null), cd.samples())
@@ -2870,13 +2879,22 @@ func _update_held(cd: Cord, delta: float) -> void:
 	_light(t, fits and w > 0.5)
 
 
+## How far a cable reaches. The computer's is long: it goes from the back of the
+## computer right round to the near left corner of the L.
+func _reach(cd: Cord) -> float:
+	return DISP_CABLE if cd == disp_cord else CABLE
+
+
+const DISP_CABLE := 3.4
+
+
 ## A held plug can't be pulled farther than the cable reaches.
 func _on_leash(cd: Cord, p: Vector3) -> Vector3:
 	var a := cd.anchor()
 	var d := Vector3(p.x - a.x, 0, p.z - a.z)
-	if d.length() <= CABLE:
+	if d.length() <= _reach(cd):
 		return p
-	d = d.normalized() * CABLE
+	d = d.normalized() * _reach(cd)
 	return Vector3(a.x + d.x, p.y, a.z + d.z)
 
 
@@ -3716,7 +3734,7 @@ func _move_camera(delta: float) -> void:
 		np.x = clampf(np.x, SIDE_X + pr, RIGHT_X - pr) # the walls
 		np.z = clampf(np.z, WALL_Z + pr, FRONT_Z - pr)
 		for box in [Rect2(-1.65, -0.9, 3.3, 1.8), # the bench
-				Rect2(WING_X0, WING_Z0, WING_X1 - WING_X0, WING_Z1 - WING_Z0), # its wing
+				Rect2(WING_OUT, WING_Z0, WING_IN - WING_OUT, WING_Z1 - WING_Z0), # its wing
 				Rect2(BIN_X - 0.25, BIN_Z0 - 0.3, 0.5, 2.1), # the bin stand
 				]:
 			var r: Rect2 = box.grow(pr)
@@ -4282,7 +4300,7 @@ func _build_monitor() -> void:
 	screen_body = _collider(body, Vector3(0.62, 0.334, 0.01), Vector3(0, 0.03, 0.246), "screen")
 	screen_body.set_meta("screen", true)
 	_set_tab("scene")
-	# its display cable: plug it into the ring socket in the back of a verb to show that sentence
+	# its display cable: plug it into the ring socket in the left end of a verb to show that sentence
 	# (it comes out of a socket in the back of the computer, and lies on the bench to its right)
 	var port := Tile.new()
 	port.cord_kind = "disp"
@@ -4472,14 +4490,14 @@ var TUTORIALS := [
 		"deliver": [["curr", "", "", "loose"]],
 		"steps": [
 			{"text": "Take the verb curr- out of the tray and put it on the bench.", "check": "on_bench:curr", "hl": ["tile:curr"]},
-			{"text": "Pick up the yellow cable coming out of the back of the computer and push its ring plug into the round socket on the back of curr-.", "check": "disp:curr", "hl": ["plug:disp", "tile:curr"]},
-			{"text": "Turn right: the drawers hang under the bench's wing. Open ACTIVA and slide a -t onto the end of curr-.", "check": "ending:curr:t", "hl": ["drawer:verb", "tile:curr"]},
+			{"text": "Pick up the yellow cable coming out of the back of the computer and push its ring plug into the round socket in the left end of curr-.", "check": "disp:curr", "hl": ["plug:disp", "tile:curr"]},
+			{"text": "Turn left: the drawers hang under the bench's wing. Open ACTIVA and slide a -t onto the end of curr-.", "check": "ending:curr:t", "hl": ["drawer:verb", "tile:curr"]},
 			{"text": "Look at the computer: currit, someone is running.", "check": "scene:curr", "hl": ["screen"]}]},
 	{"title": "Quis Currit?", "pay": 5, "text": "A noun can be the one doing the verb. Give puell- an ending, and plug its blue cable into the end of your currit: now the picture shows who's running.",
 		"deliver": [["puell", "", "", "loose"]], "need": ["curr", "t"], # (your currit from the first lesson: a new one only if it's gone)
 		"steps": [
 			{"text": "Put puell- from the tray on the bench.", "check": "on_bench:puell", "hl": ["tile:puell"]},
-			{"text": "Open the DECL. I drawer (under the wing on your right) and slide an -a onto puell-.", "check": "ending:puell:a", "hl": ["drawer:decl1", "tile:puell"]},
+			{"text": "Open the DECL. I drawer (under the wing on your left, at the far end) and slide an -a onto puell-.", "check": "ending:puell:a", "hl": ["drawer:decl1", "tile:puell"]},
 			{"text": "Keep the computer's yellow cable plugged into your currit.", "check": "disp:curr", "hl": ["plug:disp", "tile:curr"]},
 			{"text": "Plug puella's blue cable into the end of currit: she's the one running.", "check": "sent:puell:curr", "hl": ["plugof:puell", "end:curr"]}]},
 	{"title": "Quaere!", "pay": 5, "text": "You can order any word you know from the computer. Click QVAERE, type the start of a word and press Enter: it comes down the chute.",
@@ -5905,12 +5923,12 @@ func _demo() -> void:
 		var hv := _screen(made[1].tiles[0].global_position)
 		_press(hv, false)
 		_drag_to(hv + Vector2(0, -60))
-	if "--binview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned left to the bin
-		yaw = deg_to_rad(55)
+	if "--binview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned right to the bin
+		yaw = deg_to_rad(-55)
 		pitch = deg_to_rad(-30)
 		_place_camera()
-	if "--lview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned right to the wing's drawers
-		yaw = deg_to_rad(-55)
+	if "--lview" in OS.get_cmdline_user_args(): # screenshot: from where you stand, turned left to the wing's drawers
+		yaw = deg_to_rad(70)
 		pitch = deg_to_rad(-38)
 		_place_camera()
 	if "--ringplug" in OS.get_cmdline_user_args(): # screenshot: the ring plug in the back of amant
@@ -6090,6 +6108,10 @@ func _source(kind: String, key: String, cat := "") -> Tile:
 			t.loose_body.linear_velocity = Vector3.ZERO
 			t.loose_body.angular_velocity = Vector3.ZERO
 			await get_tree().create_timer(0.6).timeout
+			if not _clickable(t): # (the drawer's out of view, far along the wing: (test only) on the bench)
+				t.loose_body.global_position = Vector3(0.6, TABLE_Y + 0.05, 0.55)
+				t.loose_body.global_basis = Basis.IDENTITY
+				await get_tree().create_timer(0.6).timeout
 		return t
 	for t in loose.filter(func(x): return is_instance_valid(x)):
 		if t.key == key and t.kind == kind and _clickable(t):
@@ -6254,7 +6276,7 @@ func _self_test() -> void:
 			return
 		await _drag(_src_pos(st), spots[k], false, st)
 		var c: Chunk = st.get_parent()
-		var src: Tile = await _source("ending", words[k][1])
+		var src: Tile = await _source("ending", words[k][1], Latin.cat_for_stem(words[k][0]))
 		await _drag(_src_pos(src), spots[k] + Vector3(c.width + 0.3, 0, 0.0), false, src)
 		fed.append(await _feed_drag(src, c))
 		made.append(c)
@@ -6557,7 +6579,7 @@ func _self_test() -> void:
 			inside += 1
 			if t.loose_body.get_parent() == self:
 				free += 1
-			if t.loose_body.global_position.x < WING_X0:
+			if t.loose_body.global_position.x > WING_IN:
 				reach += 1
 	print("T21 drawer slid out ", snappedf((dn.position - drawers[di]["closed"]).length() + z0 * 0.0, 0.01), "  parts not attached to it: ", free, "/", inside, "  parts out past the bench edge: ", reach)
 	_toggle_drawer(di)
@@ -6842,11 +6864,11 @@ func _self_test() -> void:
 	print("T48 verb drawer tidied: upright & parallel ", upright, "/", ins.size(), "  in order: ", ins.map(func(e): return e[2]))
 	_toggle_drawer(vi)
 	await get_tree().create_timer(1.1).timeout
-	# hold the button and sweep the bench from right to left: it all goes in the bin
+	# hold the button and sweep the bench from left to right: it all goes in the bin
 	var on_bench := chunks.size()
 	sweep_on = true
-	sweep_x0 = 1.0
-	drag_mouse = _screen(Vector3(-0.7, TABLE_Y, 0.2))
+	sweep_x0 = -1.0
+	drag_mouse = _screen(Vector3(1.4, TABLE_Y, 0.2))
 	_update_sweep()
 	await get_tree().create_timer(2.0).timeout
 	print("T49 swept the bench: pieces on it ", on_bench, " -> ", chunks.size())
@@ -7275,7 +7297,10 @@ func _self_test() -> void:
 	if dragging:
 		_release()
 	print("T76 verb held up: its print faces you (1 = straight on): ", snappedf(facing, 0.01), "   the computer's plug is a ring: ", disp_cord.kind == "disp" and Cord.DISP_R_IN > 0.0,
-			"  verb's socket in its back: ", hvc.tiles[0].socket_local.z < 0.0)
+			"  verb's ring socket in its left end: ", hvc.tiles[0].socket_local.x < 0.0 and is_zero_approx(hvc.tiles[0].socket_local.z))
+	var corner := Vector3(WING_IN - 0.2, TABLE_Y, WING_Z0 + 0.3) # (the near left corner of the L)
+	print("T77 the computer's cable reaches the near left corner: ", _on_leash(disp_cord, corner).distance_to(corner) < 0.01,
+			"  (", snappedf(Vector2(disp_cord.anchor().x - corner.x, disp_cord.anchor().z - corner.z).length(), 0.01), " m from the computer)")
 	# the three sorts of game: what's on the board at the start of each
 	var boards := {}
 	for m9 in ["tutorial", "learn", "career"]:

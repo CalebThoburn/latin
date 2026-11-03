@@ -304,12 +304,11 @@ func _setup_links() -> void:
 				cord_specs.append({"kind": "acc", "prongs": 1, "anchor": cord_anchor, "dir": cord_dir})
 				cord_specs.append({"kind": "dat", "prongs": 1, "anchor": cord_anchor + Vector3(0.03, 0, 0), "dir": cord_dir,
 						"rest": Vector3(0.09, 0, -0.14)})
-		# the computer's display cable plugs into a ring-shaped socket in the back of a verb
+		# the computer's display cable plugs into a ring-shaped socket in the left end of a verb
 		socket_kind = "disp"
-		var dx := -width * 0.5 + 0.032
-		socket_local = Vector3(dx, AXIS_Y, -R)
-		socket_basis = Basis(Vector3.UP, PI * 0.5) # (its hole faces out of the back)
-		_ring_socket(Vector3(dx, AXIS_Y, -R))
+		socket_local = Vector3(-width * 0.5, AXIS_Y, 0)
+		socket_basis = Basis(Vector3.UP, PI) # (its hole faces out of the left end)
+		_ring_socket(Vector3(-width * 0.5, AXIS_Y, 0))
 		# two star-shaped holes low on the front of the body: adverbs and
 		# prepositions plug in here
 		var a := deg_to_rad(STAR_ANGLE)
@@ -562,7 +561,7 @@ func _hole(r: float, face_x: float) -> void:
 
 
 ## The display socket: a ring-shaped slot (a dark circle round a post) in a
-## bright collar, for the computer's hollow ring plug. Faces out of the back (-z).
+## bright collar, for the computer's hollow ring plug. Faces out of the left end (-x).
 func _ring_socket(at: Vector3) -> void:
 	for part in [[Cord.DISP_R + 0.007, 0.003, Color("#d4dae0")], [Cord.DISP_R + 0.0015, 0.0036, COL_HOLE], [Cord.DISP_R_IN - 0.001, 0.0042, Color("#d4dae0")]]:
 		var cm := CylinderMesh.new()
@@ -570,8 +569,8 @@ func _ring_socket(at: Vector3) -> void:
 		cm.bottom_radius = part[0]
 		cm.height = part[1]
 		cm.radial_segments = 32
-		var mi := Art.mesh(self, cm, at + Vector3(0, 0, -part[1] * 0.5 + 0.001), part[2], -1)
-		mi.rotation_degrees.x = 90
+		var mi := Art.mesh(self, cm, at + Vector3(-part[1] * 0.5 + 0.001, 0, 0), part[2], -1)
+		mi.rotation_degrees.z = 90
 
 
 ## Print text on the side of a rod of radius r, facing the camera.
