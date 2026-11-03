@@ -146,7 +146,11 @@ var reel_a := 0.0 # its apothem (centre to the middle of a face)
 var reel_w := 0.0 # its length
 var reel_lamp_on: Node3D = null # the macron over the fixed letter: lit for a long ablative (ā, ō, ē, ū)
 var reel_lamp_off: Node3D = null
-const FACE_FONT := 50
+const FACE_FONT := 60
+const REEL_FACE := 0.046 # each face at least this wide (so its writing is easy to read through the window)
+const REEL_PORTS := 0.062 # room at the right of each face for its cable exit and its port
+const REEL_END := 0.006 # the housing's end wall
+var reel_facets: Array = [] # the prism's faces (their +y is the face's outward normal)
 const COL_REEL := Color("#f1e8d2")
 var mats: Array = []
 var insert_parts: Array = [] # verb endings: the i / u insert (hidden when tucked away)
@@ -251,6 +255,7 @@ func set_choice(i: int) -> float:
 	port_node = null
 	reel_labels = []
 	reel_node = null
+	reel_facets = []
 	reel_lamp_on = null
 	reel_lamp_off = null
 	mats = []
@@ -392,12 +397,14 @@ func _setup_links() -> void:
 				nom_nums.append(r[1])
 			if r[0] == "acc" and cat != "neut": # neuter -a: subject cable only (N·PL makes it an object)
 				socket_kind = "acc"
-				socket_local = Vector3(width * 0.5, _port_y(), 0)
+				socket_local = _port_local()
+				socket_basis = _port_basis()
 				port_node = _new_port()
 				Art.box(port_node, Vector3(0.004, Cord.ACC_PRONG + 0.006, Cord.ACC_PRONG + 0.006), Vector3.ZERO, COL_HOLE, -1)
 			if r[0] == "abl" and socket_kind == "": # a triangular hole: prepositions + ablative
 				socket_kind = "abl"
-				socket_local = Vector3(width * 0.5, _port_y(), 0)
+				socket_local = _port_local()
+				socket_basis = _port_basis()
 				port_node = _new_port()
 				Art.mesh(port_node, Cord.tri_prism(Cord.TRI_R + 0.003, 0.004), Vector3.ZERO, COL_HOLE, -1, 1.0, true)
 		if not nom_nums.is_empty():
@@ -406,22 +413,22 @@ func _setup_links() -> void:
 			# the back is taken by the genitive holder: the cable leaves from the front
 			cord_dir = Vector3(0, 0, 1) if gen_holder else Vector3(0, 0, -1)
 			cord_anchor = Vector3(0, 0, D * 0.5 if gen_holder else -D * 0.5)
-			if nom_nums.size() > 1: # 5th decl. -ēs: singular OR plural: a cable for each
+			if reel_node: # on a reel: up out of the face that's up, through the window
+				cord_dir = Vector3.UP
+				cord_anchor = Vector3(reel_cx + _cable_x(0, nom_nums.size()), reel_top + 0.001, 0) # (from the window's opening)
+				if nom_nums.size() == 1:
+					cord_specs.append({"kind": "nom", "prongs": cord_prongs, "anchor": cord_anchor, "dir": cord_dir, "rest": Vector3(-0.02, 0, -0.17)})
+			if nom_nums.size() > 1 and reel_node:
+				cord_specs.append({"kind": "nom", "prongs": 1, "anchor": cord_anchor, "dir": cord_dir, "rest": Vector3(-0.05, 0, -0.17)})
+				cord_specs.append({"kind": "nom", "prongs": 2, "anchor": Vector3(reel_cx + _cable_x(1, 2), reel_top + 0.001, 0), "dir": cord_dir, "rest": Vector3(0.07, 0, -0.17)})
+			elif nom_nums.size() > 1: # 5th decl. -ēs: singular OR plural: a cable for each
 				cord_prongs = 1
 				cord_anchor = Vector3(-0.025 * S, 0, -D * 0.5)
 				cord_specs.append({"kind": "nom", "prongs": 1, "anchor": cord_anchor, "dir": cord_dir, "rest": Vector3(-0.05, 0, -0.14)})
 				cord_specs.append({"kind": "nom", "prongs": 2, "anchor": Vector3(0.025 * S, 0, -D * 0.5), "dir": cord_dir, "rest": Vector3(0.07, 0, -0.14)})
 	if cord_specs.is_empty() and cord_kind != "":
 		cord_specs.append({"kind": cord_kind, "prongs": cord_prongs, "anchor": cord_anchor, "dir": cord_dir})
-	if is_reel() and kind == "ending": # the subject cable lives in a little hole, and pops out when a nominative's chosen
-		var holes := []
-		for sp in cord_specs:
-			if sp["kind"] == "nom":
-				holes.append(sp["anchor"])
-		if holes.is_empty() and reel_opts.any(func(o): return Latin.has_case(cat, Latin.reel_form(reel_base, o), "nom")):
-			holes.append(Vector3(0, 0, -D * 0.5))
-		for hp: Vector3 in holes:
-			Art.box(self, Vector3(0.026, 0.014, 0.002), hp + Vector3(0, 0, -0.0005 if hp.z < 0.0 else 0.0005), COL_HOLE, -1)
+
 	# adjectives plug into nouns from above: a gender jack on every noun stem (where
 	# the word is), and an agreement socket on whatever carries the noun's case
 	if kind == "stem" and Latin.STEMS[key]["pos"] == "noun":
@@ -429,7 +436,7 @@ func _setup_links() -> void:
 		if Latin.STEMS[key].get("bare_nom", false): # puer, rēx: the bare stem is the case-bearer
 			_top_socket("agree", Vector3(width * 0.3, H * 0.5, -D * 0.2))
 	elif kind == "ending" and cat != "verb" and not cat.begins_with("adj"):
-		var sx1 := width * 0.5 - (reel_w + 0.004 if is_reel() else 0.0) # (on the board, not the prism)
+		var sx1 := width * 0.5 - (reel_w + REEL_END if is_reel() else 0.0) # (on the board, not over the prism)
 		_top_socket("agree", Vector3(lerpf(-width * 0.5, sx1, 0.25), H * 0.5, -D * 0.25))
 		if Latin.has_case(cat, key, "dat"): # a dative: a round purple-ringed hole for a dative verb's cable
 			_top_socket("dat", Vector3(lerpf(-width * 0.5, sx1, 0.75), H * 0.5, -D * 0.25))
@@ -623,10 +630,10 @@ func _build_block() -> void:
 		w_base = text_w("-" + reel_base, FONT_SIZE)
 		for o in reel_opts:
 			w_win = maxf(w_win, text_w(o, FACE_FONT))
-		w_win = maxf(0.05 * S, w_win + 0.026 * S)
-		width = w_base + w_win + 0.06 * S
+		w_win = maxf(0.03 * S, w_win + 0.016) + REEL_PORTS # (each face: its letters, then its cable exit and port)
+		width = w_base + w_win + REEL_END + 0.05 * S
 	var board := color_for(kind, key, cat)
-	var slab_w := width - (w_win + 0.004 if w_win > 0.0 else 0.0) # (a reel's prism takes the right end)
+	var slab_w := width - (w_win + REEL_END if w_win > 0.0 else 0.0) # (a reel's housing takes the right end)
 	var mi := Art.box(self, Vector3(slab_w, H, D), Vector3(-(width - slab_w) * 0.5, 0, 0), board, 0, 0.7)
 	mats.append(mi.material_override)
 	var n0 := get_child_count()
@@ -638,18 +645,33 @@ func _build_block() -> void:
 		var dc := get_child(i)
 		if dc is Node3D:
 			dc.position.x -= (full - slab_w) * 0.5
-	if w_win > 0.0: # a cradle the prism sits half sunk in
-		var cr := Art.box(self, Vector3(w_win + 0.004, H * 0.5, D), Vector3(width * 0.5 - (w_win + 0.004) * 0.5, -H * 0.25, 0), board.darkened(0.12), 0, 0.7)
-		mats.append(cr.material_override)
+	if w_win > 0.0: # the housing round the prism: a box (a bit taller than the board) with a window in its top
+		var hx := width * 0.5 - REEL_END - w_win * 0.5
+		var dims := _reel_dims()
+		var hh: float = dims[2]
+		var yc: float = dims[1]
+		var fw: float = dims[3] # (the window: as wide as one face)
+		var wall := (D - fw) * 0.5
+		for sz in [-1.0, 1.0]:
+			var wm := Art.box(self, Vector3(w_win, hh, wall), Vector3(hx, yc, sz * (fw * 0.5 + wall * 0.5)), board, 0, 0.7)
+			mats.append(wm.material_override)
+		var em := Art.box(self, Vector3(REEL_END, hh, D), Vector3(width * 0.5 - REEL_END * 0.5, yc, 0), board, 0, 0.7)
+		mats.append(em.material_override)
+		Art.box(self, Vector3(w_win, 0.003, fw), Vector3(hx, -H * 0.5 + 0.0015, 0), board.darkened(0.4), -1) # (its floor)
+		var top := yc + hh * 0.5
+		for sz in [-1.0, 1.0]: # a metal frame round the window
+			Art.box(self, Vector3(w_win + 0.008, 0.0015, 0.004), Vector3(hx, top + 0.0008, sz * (fw * 0.5 + 0.002)), COL_TRACE, -1)
+		for sx in [-1.0, 1.0]:
+			Art.box(self, Vector3(0.004, 0.0015, fw + 0.008), Vector3(hx + sx * (w_win * 0.5 + 0.002), top + 0.0008, 0), COL_TRACE, -1)
 	label = Art.label3d("", FONT_SIZE, PIXEL)
 	label.modulate = COL_SILK
 	label.outline_size = 0
 	label.rotation_degrees = Vector3(-90, 0, 0)
 	label.position = Vector3(0, H * 0.5 + 0.002, 0.004)
 	add_child(label)
-	if w_win > 0.0: # the prism, at the right end: an option on each face
+	if w_win > 0.0: # the prism, in its housing at the right end: an option on each face
 		label.position.x = -width * 0.5 + 0.03 + w_base * 0.5
-		var cx := width * 0.5 - w_win * 0.5
+		var cx := width * 0.5 - REEL_END - w_win * 0.5
 		win_x = Vector2(cx - w_win * 0.5, cx + w_win * 0.5)
 		reel_cx = cx
 		_build_prism(cx, w_win)
@@ -911,22 +933,49 @@ func port_open() -> bool:
 	return port_node != null and port_goal > 0.5 and port_amt > 0.95
 
 
-## Where an ending's square / triangular hole is: on a reel, in the middle of the
-## prism's end (it turns with the prism); otherwise in the middle of the end.
-func _port_y() -> float:
-	return reel_a - H * 0.5 if reel_node else 0.0
+## The prism's size: [corner radius, centre height, housing height, face width]. Its
+## faces are wide enough to read; the housing's bottom is level with the board's.
+func _reel_dims() -> Array:
+	var n := maxi(3, reel_opts.size())
+	var r := maxf(H * 0.5 - 0.0012, REEL_FACE / (2.0 * sin(PI / n)))
+	var hh := 2.0 * (r + 0.0012)
+	return [r, -H * 0.5 + hh * 0.5, hh, 2.0 * r * sin(PI / n)]
 
 
+var reel_yc := 0.0 # the prism's centre height
+var reel_top := 0.0 # the top of its housing (where the window is)
+
+
+## On a reel, a face's cable exits and its port sit at the right of the face, after
+## its letters (prism-local x).
+func _cable_x(j: int, count: int) -> float:
+	return reel_w * 0.5 - REEL_PORTS + 0.012 + j * 0.014 - (0.0 if count == 1 else 0.0)
+
+
+func _port_x() -> float:
+	return reel_w * 0.5 - 0.016
+
+
+## Where an ending's square / triangular hole is. On a reel: in the face that's up,
+## through the window (its hole points up, and it turns with the prism).
 func _new_port() -> Node3D:
 	var pn := Node3D.new()
-	if reel_node: # on the prism's end cap, turned to sit square when this face is on top
-		pn.position = Vector3(reel_w * 0.5 + 0.001, 0, 0)
-		pn.rotation.x = TAU * choice / reel_n
-		reel_node.add_child(pn)
+	if reel_node:
+		pn.position = Vector3(_port_x(), reel_a + 0.0008, 0)
+		pn.basis = Basis(Vector3.UP, Vector3.LEFT, Vector3.BACK) # (its x: out of the face)
+		reel_facets[choice].add_child(pn)
 	else:
 		pn.position = Vector3(width * 0.5 + 0.001, 0, 0)
 		add_child(pn)
 	return pn
+
+
+func _port_local() -> Vector3:
+	return Vector3(reel_cx + _port_x(), reel_yc + reel_a, 0) if reel_node else Vector3(width * 0.5, 0, 0)
+
+
+func _port_basis() -> Basis:
+	return Basis(Vector3.UP, Vector3.LEFT, Vector3.BACK) if reel_node else Basis.IDENTITY
 
 
 ## The prism: an N-sided prism along x (N = the options, at least three), each
@@ -936,29 +985,38 @@ func _build_prism(cx: float, plen: float) -> void:
 	var n := maxi(3, reel_opts.size())
 	reel_n = n
 	reel_w = plen
-	var need := FACE_FONT * PIXEL * 0.8 # (each face wide enough for its writing)
-	var a := maxf(H * 0.5 + 0.002, need / (2.0 * tan(PI / n)))
+	var dims := _reel_dims()
+	var a: float = dims[0] * cos(PI / n) # (it turns inside its housing: its corners just clear the walls)
 	reel_a = a
+	reel_yc = dims[1]
+	reel_top = dims[1] + dims[2] * 0.5
 	reel_node = Node3D.new()
-	reel_node.position = Vector3(cx, a - H * 0.5, 0) # (its bottom face level with the piece's underside)
+	reel_node.position = Vector3(cx, reel_yc, 0)
 	add_child(reel_node)
+	reel_facets = []
 	var pm := Art.mesh(reel_node, _prism_mesh(n, a, plen), Vector3.ZERO, COL_REEL, 0, 0.6)
 	mats.append(pm.material_override)
 	for k in n:
 		var facet := Node3D.new() # (its +y is this face's outward normal)
 		facet.rotation.x = TAU * k / n
 		reel_node.add_child(facet)
+		reel_facets.append(facet)
 		var o: String = reel_opts[k] if k < reel_opts.size() else "~"
+		var tx := -plen * 0.5 + 0.008 + (plen - REEL_PORTS - 0.008) * 0.5 # (the letters: the left part of the face)
 		var lab := Art.label3d("", FACE_FONT, PIXEL)
 		lab.modulate = INK_REEL
 		lab.outline_size = 0
 		lab.rotation_degrees = Vector3(-90, 0, 0)
-		lab.position = Vector3(0, a + 0.0012, 0.003)
+		lab.position = Vector3(tx, a + 0.0012, 0.0015)
 		facet.add_child(lab)
 		reel_labels.append(lab)
 		if k < reel_opts.size() and long_opt(o): # a long ablative: a macron on its face
-			var bar := Art.box(facet, Vector3(plen * 0.45, 0.002, 0.005), Vector3(0, a + 0.001, 0), INK_REEL, -1)
+			var bar := Art.box(facet, Vector3((plen - REEL_PORTS) * 0.6, 0.002, 0.004), Vector3(tx, a + 0.001, 0), INK_REEL, -1)
 			bar.set_meta("macron", k)
+		if k < reel_opts.size() and Latin.has_case(cat, Latin.reel_form(reel_base, o), "nom"): # the hole its subject cable comes out of
+			var hn := 2 if (cat == "decl5" and Latin.reel_form(reel_base, o) == "es") else 1
+			for j in hn:
+				Art.box(facet, Vector3(0.011, 0.001, 0.011), Vector3(_cable_x(j, hn), a + 0.0006, 0), COL_HOLE, -1)
 		for side in [-1.0, 1.0]: # thin rails along the face's edges
 			var ang := PI / n
 			var e := Vector3(0, a, side * a * tan(ang))

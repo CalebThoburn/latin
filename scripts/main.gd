@@ -5959,9 +5959,9 @@ func _demo() -> void:
 		var ab := _new_chunk([_new_tile("stem", "silv"), _new_ending("decl1", "ā")], Vector3(-0.55, TABLE_Y, 0.62))
 		_refresh(ab)
 		var mid: Vector3 = made[0].tiles[1].global_position
-		player = Vector3(mid.x + 0.05, 0, mid.z + 0.7)
+		player = Vector3(mid.x + 0.05, 0, mid.z + 0.45)
 		yaw = 0.0
-		pitch = deg_to_rad(-58)
+		pitch = deg_to_rad(-72)
 		_place_camera()
 	if "--cornerview" in OS.get_cmdline_user_args(): # screenshot: the bench, and the corner table with the chute and tray
 		yaw = deg_to_rad(38)
@@ -6514,7 +6514,7 @@ func _self_test() -> void:
 	_refresh(gw)
 	var rex := _new_chunk([_take_tile(_loose_of("reg"))], Vector3(0.1, TABLE_Y, 0.35))
 	_refresh(rex)
-	print("T20 rēx alone reads: ", rex.analysis.get("latin", "?"), "  puellae has a holder: ", gen.gen_holder, "  its cable leaves the front: ", gen.cord_dir.z > 0.5)
+	print("T20 rēx alone reads: ", rex.analysis.get("latin", "?"), "  puellae has a holder: ", gen.gen_holder, "  its cable comes up out of the prism's face (not the back, where the holder is): ", gen.cord_dir.y > 0.5)
 	_grab(rex.tiles[0], true)
 	var lit_far := false
 	for f in 10: # aimed somewhere else: nothing lit
