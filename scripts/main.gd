@@ -203,7 +203,9 @@ func _ready() -> void:
 			yaw = deg_to_rad(90)
 			pitch = deg_to_rad(-3)
 		else:
-			pitch = deg_to_rad(-38)
+			pitch = deg_to_rad(-38) if not "--tutlow" in a0 else deg_to_rad(-62)
+			if "--tutlow" in a0:
+				player = Vector3(0.0, 0, 1.9)
 		_place_camera()
 	if "--wallview" in a0: # screenshot: the sticky notes on the board
 		player = Vector3(SIDE_X + 1.2, 0, 0.9)
@@ -775,8 +777,6 @@ func _slide_down_chute(rb: RigidBody3D, center: Vector3) -> void:
 # ---------------------------------------------------------------- drawers
 
 func _build_drawers() -> void:
-	var red := Color("#c8473d")
-	var red_dark := Color("#a83a32")
 	for cab_info in CABINETS:
 		var cats: Array = cab_info["cats"]
 		var n := cats.size()
@@ -788,27 +788,48 @@ func _build_drawers() -> void:
 		cab.position = Vector3(cab_info["x"], top - h, cab_info.get("z", CAB_Z))
 		cab.rotation.y = yaw0
 		add_child(cab)
-		if cab_info.get("legs", false): # standing on the floor
-			for lx in [-1, 1]:
-				for lz in [-1, 1]:
-					Art.box(cab, Vector3(0.04, top - h, 0.04), Vector3(lx * (cw * 0.5 - 0.03), -(top - h) * 0.5, lz * (CAB_D * 0.5 - 0.03)), STEEL_DARK)
-			Art.box(cab, Vector3(cw, 0.02, CAB_D), Vector3(0, h + 0.01, 0), Color("#a83a32")) # a top
-			_collider(cab, Vector3(cw, 0.02, CAB_D), Vector3(0, h + 0.01, 0), "cabinet", L_WORLD | L_BLOCK)
-			_collider(cab, Vector3(cw, top - h + 0.02, CAB_D), Vector3(0, -(top - h) * 0.5, 0), "cabinet", L_WORLD | L_BLOCK)
-		# the shell, hung from the underside of the bench top
-		for sx in [-1, 1]:
-			Art.box(cab, Vector3(0.025, h, CAB_D), Vector3(sx * (cw * 0.5 - 0.0125), h * 0.5, 0), red)
-			_collider(cab, Vector3(0.025, h, CAB_D), Vector3(sx * (cw * 0.5 - 0.0125), h * 0.5, 0), "cabinet", L_WORLD | L_BLOCK)
-		Art.box(cab, Vector3(cw, h, 0.025), Vector3(0, h * 0.5, -CAB_D * 0.5 + 0.0125), red_dark)
-		_collider(cab, Vector3(cw, h, 0.025), Vector3(0, h * 0.5, -CAB_D * 0.5 + 0.0125), "cabinet", L_WORLD | L_BLOCK)
-		Art.box(cab, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), red_dark)
-		_collider(cab, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), "cabinet", L_WORLD | L_BLOCK)
-		Art.box(cab, Vector3(cw, 0.01, CAB_D), Vector3(0, h - 0.005, 0), red_dark)
-		for k in range(1, n): # shelves between the drawers
-			Art.box(cab, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, 0), STEEL_DARK, -1)
-			_collider(cab, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, -0.015), "cabinet", L_WORLD | L_BLOCK)
+		cabinets.append({"node": cab, "w": cw, "n": n, "first": drawers.size(), "shell": null, "m": -1})
+		_cab_shell(cabinets.size() - 1, n)
 		for k in n:
 			_build_drawer(cats[k], cab.position + Vector3(0, 0.01 + (n - 1 - k) * DR_PITCH + 0.008, 0), cw, yaw0) # first one on top
+
+
+var cabinets: Array = [] # {node, w, n, first (its first drawer), shell, m (drawers it has room for now)}
+
+
+## A cabinet's shell, hung from the underside of the bench top, just deep enough
+## for its top `m` drawers (the ones you've unlocked): no empty slots, and no
+## cabinet at all until something in it is unlocked.
+func _cab_shell(ci: int, m: int) -> void:
+	var cb: Dictionary = cabinets[ci]
+	if cb["m"] == m:
+		return
+	cb["m"] = m
+	if cb["shell"]:
+		cb["shell"].queue_free()
+		cb["shell"] = null
+	if m <= 0:
+		return
+	var red := Color("#c8473d")
+	var red_dark := Color("#a83a32")
+	var cw: float = cb["w"]
+	var n: int = cb["n"]
+	var shell := Node3D.new()
+	shell.position = Vector3(0, (n - m) * DR_PITCH, 0) # (the bottom drawers that aren't there: it ends above them)
+	cb["node"].add_child(shell)
+	cb["shell"] = shell
+	var h := m * DR_PITCH + 0.02
+	for sx in [-1, 1]:
+		Art.box(shell, Vector3(0.025, h, CAB_D), Vector3(sx * (cw * 0.5 - 0.0125), h * 0.5, 0), red)
+		_collider(shell, Vector3(0.025, h, CAB_D), Vector3(sx * (cw * 0.5 - 0.0125), h * 0.5, 0), "cabinet", L_WORLD | L_BLOCK)
+	Art.box(shell, Vector3(cw, h, 0.025), Vector3(0, h * 0.5, -CAB_D * 0.5 + 0.0125), red_dark)
+	_collider(shell, Vector3(cw, h, 0.025), Vector3(0, h * 0.5, -CAB_D * 0.5 + 0.0125), "cabinet", L_WORLD | L_BLOCK)
+	Art.box(shell, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), red_dark)
+	_collider(shell, Vector3(cw, 0.012, CAB_D), Vector3(0, 0.004, 0), "cabinet", L_WORLD | L_BLOCK)
+	Art.box(shell, Vector3(cw, 0.01, CAB_D), Vector3(0, h - 0.005, 0), red_dark)
+	for k in range(1, m): # shelves between the drawers
+		Art.box(shell, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, 0), STEEL_DARK, -1)
+		_collider(shell, Vector3(cw - 0.05, 0.008, CAB_D - 0.03), Vector3(0, 0.01 + k * DR_PITCH, -0.015), "cabinet", L_WORLD | L_BLOCK)
 
 
 ## One drawer: a solid (kinematic) box that slides out toward you. What lies in
@@ -3864,6 +3885,13 @@ func _build_bins() -> void:
 		_collider(self, Vector3(0.5, slot_hi - slot_lo, zl), Vector3(BIN_X, (slot_lo + slot_hi) * 0.5, zc), "rack", L_WORLD)
 	Art.box(self, Vector3(0.48, slot_hi - slot_lo, 0.5), Vector3(BIN_X + 0.01, (slot_lo + slot_hi) * 0.5, slot_z), Color("#1d1824"), -1) # the slot's dark inside
 	_build_drawer("neut", Vector3(BIN_X - 0.25 + 0.19 + 0.028, slot_lo + 0.012, slot_z), 0.5, -PI * 0.5, 0.38, 0.32) # front flush with the stand
+	var nd: Dictionary = drawers.back()
+	nd["in_stand"] = true # (while it's locked, the stand is just solid there)
+	for ch in nd["blank"].get_children(): # (a plain cover the stand's colour, not a drawer front)
+		if ch is MeshInstance3D:
+			var bm := ch.mesh as BoxMesh
+			Art.box(nd["blank"], bm.size if bm else Vector3(0.47, 0.15, 0.03), ch.position, STEEL_DARK)
+			ch.queue_free()
 	for i in BINS.size():
 		var info: Array = BINS[i]
 		var c := Vector3(BIN_X, BIN_TOP, BIN_Z0 + i * 0.5)
@@ -4428,20 +4456,20 @@ var TUTORIALS := [
 			{"text": "Pick up the yellow cable coming out of the back of the computer and plug it into the left end of curr-.", "check": "disp:curr", "hl": ["plug:disp", "tile:curr"]},
 			{"text": "Open the ACTIVA drawer under the right of the bench and slide a -t onto the end of curr-.", "check": "ending:curr:t", "hl": ["drawer:verb", "tile:curr"]},
 			{"text": "Look at the computer: currit, someone is running.", "check": "scene:curr", "hl": ["screen"]}]},
-	{"title": "Quis Currit?", "pay": 5, "text": "A noun can be the one doing the verb. Give puell- an ending, and plug its blue cable into the verb's ending: now the picture shows who's walking.",
-		"deliver": [["puell", "", "", "loose"], ["ambula", "t", "verb", "loose"]],
+	{"title": "Quis Currit?", "pay": 5, "text": "A noun can be the one doing the verb. Give puell- an ending, and plug its blue cable into the end of your currit: now the picture shows who's running.",
+		"deliver": [["puell", "", "", "loose"]], "need": ["curr", "t"], # (your currit from the first lesson: a new one only if it's gone)
 		"steps": [
-			{"text": "Put puell- and ambulat from the tray on the bench.", "check": "on_bench:puell,ambula", "hl": ["tile:puell", "tile:ambula"]},
+			{"text": "Put puell- from the tray on the bench.", "check": "on_bench:puell", "hl": ["tile:puell"]},
 			{"text": "Open the DECL. I drawer under the left of the bench and slide an -a onto puell-.", "check": "ending:puell:a", "hl": ["drawer:decl1", "tile:puell"]},
-			{"text": "Plug the computer's yellow cable into the left end of ambulat.", "check": "disp:ambula", "hl": ["plug:disp", "tile:ambula"]},
-			{"text": "Plug puella's blue cable into the end of ambulat: she's the one walking.", "check": "subj:puell", "hl": ["plugof:puell", "end:ambula"]}]},
+			{"text": "Keep the computer's yellow cable plugged into your currit.", "check": "disp:curr", "hl": ["plug:disp", "tile:curr"]},
+			{"text": "Plug puella's blue cable into the end of currit: she's the one running.", "check": "sent:puell:curr", "hl": ["plugof:puell", "end:curr"]}]},
 	{"title": "Quaere!", "pay": 5, "text": "You can order any word you know from the computer. Click QVAERE, type the start of a word and press Enter: it comes down the chute.",
 		"deliver": [],
 		"steps": [
 			{"text": "Click QVAERE under the computer's screen.", "check": "tab:search", "hl": ["tab:search"]},
 			{"text": "Type puer and press Enter.", "check": "ordered:puer", "hl": ["screen"]},
-			{"text": "Now look up curr and order it too.", "check": "ordered:curr", "hl": ["screen"]},
-			{"text": "Build puer currit: put both on the bench, -t on curr-, the computer into currit, and puer's blue cable into -t. (Click TABVLA to see the picture.)", "check": "subj:puer", "hl": ["tile:puer", "tile:curr", "tab:scene"]}]},
+			{"text": "Now look up ambula and order it too.", "check": "ordered:ambula", "hl": ["screen"]},
+			{"text": "Build puer ambulat: put both on the bench, -t from ACTIVA on ambula-, the computer into it, and puer's blue cable into -t. (Click TABVLA to see the picture.)", "check": "sent:puer:ambula", "hl": ["tile:puer", "tile:ambula", "tab:scene"]}]},
 ]
 
 ## Challenges: extra notes, not needed to go on. They stay up until they're done;
@@ -4808,8 +4836,7 @@ func _note_done() -> void:
 	if parts[1] in ["recon", "picture"] and notes_done.has(_note_key(L, "recon")) and notes_done.has(_note_key(L, "picture")) and L == Latin.level:
 		_level_up()
 	elif parts[1] == "tut" and _tuts_done():
-		get_tree().create_timer(2.5).timeout.connect(func() -> void:
-			_toast("Tirocinium perfectum! You know the basics. Start a DISCIPVLVS or MERCATOR game from the menu (Esc).", 9.0))
+		get_tree().create_timer(2.0).timeout.connect(_tut_finished_popup)
 	for ci in CERTAMINA.size(): # a challenge this one opened
 		if CERTAMINA[ci]["after"] == active_note_was(parts) and _note_state(ci + 1, "chal") == "open":
 			get_tree().create_timer(2.5).timeout.connect(func() -> void: _toast("A new challenge on the board: %s" % CERTAMINA[ci]["title"], 5.0))
@@ -4919,6 +4946,59 @@ func _check_order(sc: Dictionary) -> void:
 		get_tree().create_timer(1.0).timeout.connect(_note_done)
 
 
+## The tutorial's done: say so, and offer the main game (or the menu).
+var done_layer: CanvasLayer
+
+
+func _tut_finished_popup() -> void:
+	if done_layer == null:
+		done_layer = CanvasLayer.new()
+		done_layer.layer = 9
+		add_child(done_layer)
+		var root := Control.new()
+		root.set_anchors_preset(Control.PRESET_FULL_RECT)
+		root.theme = Art.make_theme()
+		done_layer.add_child(root)
+		var dim := ColorRect.new()
+		dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+		dim.color = Color(0.06, 0.05, 0.09, 0.7)
+		root.add_child(dim)
+		var pn := PanelContainer.new()
+		pn.add_theme_stylebox_override("panel", Art.panel_style(Color("#b6e3a0"), 4))
+		pn.set_anchors_preset(Control.PRESET_CENTER)
+		pn.position = Vector2(-300, -170)
+		pn.size = Vector2(600, 340)
+		root.add_child(pn)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 14)
+		pn.add_child(vb)
+		var t := Label.new()
+		t.text = "TIROCINIVM PERFECTVM!"
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		t.add_theme_font_size_override("font_size", 38)
+		t.add_theme_color_override("font_color", INK)
+		vb.add_child(t)
+		var b := Label.new()
+		b.text = "You've finished the tutorial: you can build words, wire up sentences, and order words from the computer. Start the main game now?"
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size = Vector2(560, 0)
+		b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.add_theme_font_size_override("font_size", 20)
+		b.add_theme_color_override("font_color", INK)
+		vb.add_child(b)
+		var go := _menu_button(vb, "INCIPE LVDVM", func() -> void: # the main game, in this same slot
+			done_layer.visible = false
+			new_mode = "learn"
+			_menu_new(slot))
+		go.custom_minimum_size = Vector2(560, 58)
+		var mn := _menu_button(vb, "AD MENV", func() -> void:
+			done_layer.visible = false
+			_show_menu())
+		mn.custom_minimum_size = Vector2(560, 50)
+	done_layer.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
 ## Starting a new game in a mode.
 func _begin_mode(m: String) -> void:
 	mode = m
@@ -4962,12 +5042,16 @@ func _start_tut(info: Dictionary) -> void:
 	tut_ordered.clear()
 	for spec in info["deliver"]:
 		chute_queue.append(spec)
+	if info.has("need") and _stem_tile(info["need"][0]) == null: # (the word from the lesson before was thrown away: a new one)
+		chute_queue.append([info["need"][0], info["need"][1], "verb", "loose"])
 
 
 func _tut_end() -> void:
 	tut_info = {}
 	for a in tut_arrows:
-		a.visible = false
+		if is_instance_valid(a):
+			a.queue_free()
+	tut_arrows.clear()
 	for t in tut_lit:
 		if is_instance_valid(t):
 			t.set_highlight(false)
@@ -5036,6 +5120,9 @@ func _tut_check(what: String) -> bool:
 		"subj":
 			var sc := _scene()
 			return sc["state"] == "scene" and sc.get("subj") is Dictionary and sc["subj"]["stem"] == p[1]
+		"sent": # this subject, this verb
+			var sc := _scene()
+			return sc["state"] == "scene" and sc.get("verb", "") == p[2] and sc.get("subj") is Dictionary and sc["subj"]["stem"] == p[1]
 		"tab":
 			return screen_tab == p[1]
 		"ordered":
@@ -5043,9 +5130,10 @@ func _tut_check(what: String) -> bool:
 	return false
 
 
-## Point things out: a glowing white outline round each thing to use next.
+## Point things out: a glowing white outline round each thing to use next. Each
+## outline is put on the thing itself (a child of it), so it goes wherever it goes.
 func _tut_highlight(targets: Array) -> void:
-	var boxes := [] # [transform (centre), size]
+	var boxes := [] # [node it's on, local transform (centre), local size]
 	for tg: String in targets:
 		var p := tg.split(":")
 		match p[0]:
@@ -5054,8 +5142,7 @@ func _tut_highlight(targets: Array) -> void:
 				if t and p[0] == "end":
 					t = null if not t.get_parent() is Chunk else _next_tile(t)
 				if t:
-					var xf := t.global_transform.orthonormalized()
-					boxes.append([xf * Transform3D(Basis.IDENTITY, t.shape_offset()), t.box_half() * 2.0])
+					boxes.append([t, Transform3D(Basis.IDENTITY, t.shape_offset()), t.box_half() * 2.0])
 			"plug":
 				if is_instance_valid(disp_cord) and disp_cord.socket_tile == null:
 					boxes.append(_plug_box(disp_cord))
@@ -5074,11 +5161,11 @@ func _tut_highlight(targets: Array) -> void:
 			"tab":
 				if tab_nodes.has(p[1]) and screen_tab != p[1]:
 					var tn: MeshInstance3D = tab_nodes[p[1]]
-					var sc := tn.global_basis.get_scale()
-					boxes.append([Transform3D(tn.global_basis.orthonormalized(), tn.global_position), (tn.mesh as BoxMesh).size * sc])
+					boxes.append([tn, Transform3D.IDENTITY, (tn.mesh as BoxMesh).size])
 			"screen":
 				if screen_body:
 					boxes.append(_body_box(screen_body))
+	tut_arrows = tut_arrows.filter(func(g): return is_instance_valid(g) and not g.is_queued_for_deletion())
 	while tut_arrows.size() < boxes.size():
 		var g := Node3D.new()
 		add_child(g)
@@ -5089,10 +5176,14 @@ func _tut_highlight(targets: Array) -> void:
 		g.visible = k < boxes.size()
 		if not g.visible:
 			continue
-		var size: Vector3 = boxes[k][1] + Vector3.ONE * 0.016
+		var host: Node3D = boxes[k][0]
+		if g.get_parent() != host: # (onto the thing it outlines)
+			g.get_parent().remove_child(g)
+			host.add_child(g)
+		g.transform = boxes[k][1]
+		var size: Vector3 = boxes[k][2] + Vector3.ONE * 0.016
 		if not g.get_meta("size").is_equal_approx(size):
 			_glow_frame(g, size)
-		g.global_transform = boxes[k][0]
 
 
 func _next_tile(t: Tile) -> Tile:
@@ -5104,17 +5195,15 @@ func _next_tile(t: Tile) -> Tile:
 func _plug_box(cd: Cord) -> Array:
 	var bt := cd.boot()
 	var L := cd.plen()
-	var xf := cd.plug.global_transform.orthonormalized()
-	return [xf * Transform3D(Basis.IDENTITY, Vector3((bt.x - L) * 0.5, 0, 0)), Vector3(bt.x + L, bt.y, bt.z)]
+	return [cd.plug, Transform3D(Basis.IDENTITY, Vector3((bt.x - L) * 0.5, 0, 0)), Vector3(bt.x + L, bt.y, bt.z)]
 
 
-## A collider's box, in the world: [transform, size].
+## A collider's box: [its body, local transform, size].
 func _body_box(b: Node3D) -> Array:
 	for ch in b.get_children():
 		if ch is CollisionShape3D and ch.shape is BoxShape3D:
-			var xf: Transform3D = ch.global_transform
-			return [Transform3D(xf.basis.orthonormalized(), xf.origin), (ch.shape as BoxShape3D).size * xf.basis.get_scale()]
-	return [b.global_transform, Vector3.ONE * 0.05]
+			return [b, ch.transform, (ch.shape as BoxShape3D).size]
+	return [b, Transform3D.IDENTITY, Vector3.ONE * 0.05]
 
 
 var glow_mat: StandardMaterial3D
@@ -5525,7 +5614,13 @@ func _apply_locks() -> void:
 		dn.visible = not locked
 		dn.collision_layer = 0 if locked else (L_WORLD | L_BLOCK)
 		d["front"].collision_layer = 0 if locked else L_PICK
-		d["blank"].visible = locked
+		d["blank"].visible = locked and d.get("in_stand", false) # (the neuter drawer's slot in the bin stand is closed over; cabinets just shrink)
+	for ci in cabinets.size(): # each cabinet only as deep as its unlocked drawers (top down)
+		var cb: Dictionary = cabinets[ci]
+		var m := 0
+		while m < int(cb["n"]) and not drawers[int(cb["first"]) + m].get("locked", false):
+			m += 1
+		_cab_shell(ci, m)
 	for t: Tile in loose.duplicate(): # endings (and adapters) that aren't unlocked aren't there either
 		if not is_instance_valid(t) or not t.loose_body:
 			continue
@@ -7019,7 +7114,7 @@ func _self_test() -> void:
 		if ct8 and ct8.loose_body and ct8.loose_body.linear_velocity.length() < 0.05 and not ct8.loose_body.freeze:
 			break
 	await get_tree().create_timer(0.6).timeout
-	var arrow_on: bool = tut_arrows.size() > 0 and tut_arrows[0].visible
+	var arrow_on: bool = tut_arrows.size() > 0 and tut_arrows[0].visible and tut_arrows[0].get_parent() is Tile
 	var ct := _stem_tile("curr")
 	var cc := _take_loose(ct)
 	cc.global_transform = Transform3D(Basis.IDENTITY, Vector3(0.1, TABLE_Y, 0.4))
@@ -7038,6 +7133,41 @@ func _self_test() -> void:
 	print("T67 tutorial I: notes up first ", shown0, "  in a row at the top, tilted: ", row_top, "  taken down for the steps: ", notes_hidden,
 			"  glowing outline out: ", arrow_on, "  step after putting curr- on the bench: ", step1, "  ticks: ", ticks, "  done: ", notes_done.has("1:tut"),
 			"  next: II ", _note_state(2, "tut"), ", level I ", _note_state(1, "recon"))
+	# tutorial II: just puell- comes; your currit from tutorial I is the verb
+	var cabs1 := cabinets.map(func(cb): return cb["m"])
+	_accept_note(2, "tut")
+	for f8 in 60:
+		await get_tree().create_timer(0.1).timeout
+		var pt8 := _stem_tile("puell")
+		if pt8 and pt8.loose_body and pt8.loose_body.linear_velocity.length() < 0.05 and not pt8.loose_body.freeze:
+			break
+	await get_tree().create_timer(0.8).timeout
+	var currs := chunks.filter(func(c): return c.tiles.any(func(t): return t.kind == "stem" and t.key == "curr")).size() + \
+			loose.filter(func(t): return is_instance_valid(t) and t.kind == "stem" and t.key == "curr").size()
+	var pt := _stem_tile("puell")
+	var pc := _take_loose(pt)
+	pc.global_transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, TABLE_Y, 0.5))
+	var pa8 := _new_ending("decl1", "a")
+	var pac := _new_chunk([pa8], Vector3(-0.1, TABLE_Y, 0.6))
+	_refresh(pc)
+	_refresh(pac)
+	_seat(pac, pc)
+	await get_tree().create_timer(0.6).timeout
+	for cd8: Cord in pa8.cords_out:
+		if cd8.kind == "nom":
+			_seat_plug(cd8, cc.tiles[1], 0)
+	await get_tree().create_timer(2.5).timeout
+	print("T74 tutorial II: currit reused (curr- pieces: ", currs, ")  done: ", notes_done.has("2:tut"), "   cabinets at level I (drawers each has room for): ", cabs1)
+	# the last tutorial done: a popup, main game or menu
+	active_note = "3:tut"
+	_note_done()
+	await get_tree().create_timer(2.6).timeout
+	var pop: bool = done_layer != null and done_layer.visible
+	if done_layer:
+		done_layer.visible = false
+	Latin.level = 99
+	_apply_locks()
+	print("T75 tutorial finished: popup up ", pop, "   cabinets with everything unlocked: ", cabinets.map(func(cb): return cb["m"]))
 	# challenges: at level V the gender-less adjectives and the broken screen are up; the second ones wait
 	_clear_player_words()
 	disp_cord.socket_tile = null
