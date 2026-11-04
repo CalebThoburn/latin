@@ -1749,11 +1749,12 @@ func _drag_step(delta: float) -> void:
 		var k := 1.0 - smoothstep(GEN_LOCK, GEN_LOCK + 0.14, minf(dist, 9.0))
 		want = want.lerp(seat_c - d.quaternion * v, k * 0.6)
 	var f := _feed(d, want, delta)
-	d.quaternion = f["quat"]
-	if f["seat"] == null and _bare_stem(d): # a stem brought up to the left end of an ending lying on its own: it goes on
-		var en := _ending_near(d, 0.06) # (before it moves, or it would shove the ending away)
-		if en and _stem_onto(d, en):
+	if f["seat"] == null and _bare_stem(d): # a stem near an ending lying on its own: it turns to line up and is drawn onto it
+		var ec := _feed_stem(d, want, delta, f)
+		if ec:
+			_stem_onto(d, ec)
 			return
+	d.quaternion = f["quat"]
 	if f["skip"] != null: # being fed onto a stem: the stem's guide moves it
 		d.position = f["pos"]
 	else:
@@ -2287,6 +2288,39 @@ func _ending_near(d: Chunk, reach: float) -> Chunk:
 			bd = dd
 			best = c
 	return best
+
+
+## Like an ending near a stem, but the other way round: near the left end of an
+## ending lying on its own, a held stem turns to line up with it, is drawn toward
+## where its right end meets the ending's left end, and goes on when they meet.
+## Adjusts the move `f` ({pos, quat, skip}); returns the ending's chunk once it's there.
+func _feed_stem(d: Chunk, want: Vector3, delta: float, f: Dictionary) -> Chunk:
+	var best: Chunk = null
+	var bd := 0.3
+	var tip_want := want + d.quaternion * Vector3(d.width, 0, 0) # (where its right end would be)
+	for c: Chunk in chunks:
+		if c == d or c.tiles.size() != 1 or c.tiles[0].kind != "ending" or c.tiles[0].broken or owned_by.has(c):
+			continue
+		var dd := Vector2(tip_want.x - c.position.x, tip_want.z - c.position.z).length()
+		if dd < bd:
+			bd = dd
+			best = c
+	if best == null:
+		return null
+	var vr := Chunk.validate(d.tiles + best.tiles)
+	if not vr["ok"] and not vr.get("neuter_bad", false) and mode != "career":
+		return null # (it won't go on: no pull)
+	var w := 1.0 - smoothstep(0.06, 0.26, bd)
+	var target := best.position - best.quaternion * Vector3(d.width + 0.003, 0, 0) # (its right end at the ending's left end)
+	f["pos"] = want.lerp(target, w)
+	f["quat"] = (f["quat"] as Quaternion).slerp(best.quaternion, minf(1.0, w * 1.4)).normalized()
+	if w > 0.6:
+		f["skip"] = best # (guided in: nothing shoves it about)
+	var tip_now := d.position + d.quaternion * Vector3(d.width, 0, 0)
+	var aligned: bool = (d.quaternion * Vector3.RIGHT).dot(best.quaternion * Vector3.RIGHT) > 0.98
+	if aligned and Vector2(tip_now.x - best.position.x, tip_now.z - best.position.z).length() < 0.03 and absf(tip_now.y - best.position.y) < 0.06:
+		return best
+	return null
 
 
 ## The stem goes on the ending: the ending joins the stem's word (just as if the
@@ -7443,9 +7477,16 @@ func _self_test() -> void:
 	await get_tree().create_timer(0.3).timeout
 	_grab(sa.tiles[0])
 	var lend: Vector3 = ea.global_transform * Vector3(-ea.width * 0.5, 0, 0)
+	for f in 20:
+		await get_tree().process_frame
+	var far_align: float = (dragging.quaternion * Vector3.RIGHT).dot(eac.quaternion * Vector3.RIGHT) if dragging else 0.0
+	var far_flat: float = (dragging.quaternion * Vector3.UP).dot(Vector3.UP) if dragging else 0.0
+	var near_flat := -1.0
 	for x9 in [0.3, 0.15, 0.06, 0.02, 0.0]:
 		if dragging == null:
 			break
+		if x9 <= 0.15:
+			near_flat = maxf(near_flat, (dragging.quaternion * Vector3.UP).dot(Vector3.UP))
 		var held := dragging
 		var st9: Tile = held.tiles.back()
 		var tip9: Vector3 = st9.global_transform * Vector3(st9.width * 0.5, 0, 0)
@@ -7470,7 +7511,7 @@ func _self_test() -> void:
 	_release()
 	await get_tree().create_timer(0.6).timeout
 	var clicked: bool = eb.get_parent() is Chunk and (eb.get_parent() as Chunk).tiles.size() == 2 and (eb.get_parent() as Chunk).tiles[0].key == "serv"
-	print("T78 stems onto endings: puell- brought to -am: ", brought, "  serv- clicked onto -um: ", clicked, " (", (eb.get_parent() as Chunk).analysis.get("latin", "?") if eb.get_parent() is Chunk else "?", ")",
+	print("T78 stems onto endings: held up facing you (flat: ", snappedf(far_flat, 0.01), "), near -am it lies down in line (flat: ", snappedf(near_flat, 0.01), ")  puell- brought to -am: ", brought, "  serv- clicked onto -um: ", clicked, " (", (eb.get_parent() as Chunk).analysis.get("latin", "?") if eb.get_parent() is Chunk else "?", ")",
 			"   singular plug: a flat square ", Cord.prong_section(1), " x ", Cord.PRONG_L_SG)
 	# the three sorts of game: what's on the board at the start of each
 	var boards := {}
