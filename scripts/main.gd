@@ -1750,6 +1750,10 @@ func _drag_step(delta: float) -> void:
 		want = want.lerp(seat_c - d.quaternion * v, k * 0.6)
 	var f := _feed(d, want, delta)
 	d.quaternion = f["quat"]
+	if f["seat"] == null and _bare_stem(d): # a stem brought up to the left end of an ending lying on its own: it goes on
+		var en := _ending_near(d, 0.06) # (before it moves, or it would shove the ending away)
+		if en and _stem_onto(d, en):
+			return
 	if f["skip"] != null: # being fed onto a stem: the stem's guide moves it
 		d.position = f["pos"]
 	else:
@@ -1757,7 +1761,7 @@ func _drag_step(delta: float) -> void:
 		if to.y < TABLE_Y + 0.09: # carried low: knock bench pieces out of the way
 			var keep := d.position
 			d.position = to
-			_shove(d, null)
+			_shove(d, _ending_near(d, 0.35) if _bare_stem(d) else null) # (not the ending a stem's being brought to)
 			d.position = keep
 		d.position = _cast_move(d, to)
 		_lift_clear(d)
@@ -2230,6 +2234,8 @@ func _drop() -> void:
 		return
 	if d.tiles.size() == 1 and Chunk.is_cap(d.tiles[0]) and _cap_onto(d): # an adjective cap put on
 		return
+	if _bare_stem(d) and _click_onto_ending(d): # a stem clicked onto an ending (the other way round)
+		return
 	_end_drag()
 	_clear_snap_lit()
 	if d.has_meta("left_gen"):
@@ -2255,6 +2261,74 @@ func _drop() -> void:
 				_put_down(d))
 		return
 	_put_down(d)
+
+
+## Held: just a stem (a word with no ending yet), one that takes an ending.
+func _bare_stem(d: Chunk) -> bool:
+	if d.tiles.is_empty():
+		return false
+	var st: Tile = d.tiles.back()
+	return st.kind == "stem" and not st.soldered and not st.broken and Latin.takes_ending(st.key)
+
+
+## An ending lying on its own on the bench whose left end is right by the held stem's right end.
+func _ending_near(d: Chunk, reach: float) -> Chunk:
+	var st: Tile = d.tiles.back()
+	var tip := st.global_transform * Vector3(st.width * 0.5, 0, 0)
+	var best: Chunk = null
+	var bd := reach
+	for c: Chunk in chunks:
+		if c == d or c.tiles.size() != 1 or c.tiles[0].kind != "ending" or c.tiles[0].broken or owned_by.has(c):
+			continue
+		var e: Tile = c.tiles[0]
+		var lend := e.global_transform * Vector3(-e.width * 0.5, 0, 0)
+		var dd := Vector2(tip.x - lend.x, tip.z - lend.z).length() # (across the bench: the held stem's lifted up a little)
+		if dd < bd and absf(tip.y - lend.y) < 0.2:
+			bd = dd
+			best = c
+	return best
+
+
+## The stem goes on the ending: the ending joins the stem's word (just as if the
+## ending had been pushed onto the stem). A wrong one: shaken off (or, in career
+## mode, sparks and breaks).
+func _stem_onto(d: Chunk, ec: Chunk) -> bool:
+	var vr := Chunk.validate(d.tiles + ec.tiles)
+	if not vr["ok"] and not vr.get("neuter_bad", false) and mode != "career":
+		return false
+	_seat(ec, d)
+	return true
+
+
+## Holding a stem and clicking on an ending (on the bench, or lying loose in a
+## drawer or the tray): the stem goes onto it.
+func _click_onto_ending(d: Chunk) -> bool:
+	var from := camera.project_ray_origin(drag_mouse)
+	var q := PhysicsRayQueryParameters3D.create(from, from + camera.project_ray_normal(drag_mouse) * 4.0, L_PICK | L_LOOSE | L_BLOCK)
+	var excl: Array[RID] = click_only.duplicate()
+	if is_instance_valid(pusher):
+		excl.append(pusher.get_rid())
+	for tt: Tile in d.tiles: # (not the stem you're holding)
+		if tt.body:
+			excl.append(tt.body.get_rid())
+	q.exclude = excl
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or not hit["collider"].has_meta("tile"):
+		return false
+	var t: Tile = hit["collider"].get_meta("tile")
+	if t.kind != "ending" or t.broken or t.get_parent() == d:
+		return false
+	var was_loose := t.in_tray and t.loose_body != null
+	var c: Chunk = t.loose_body.get_meta("chunk") if was_loose else t.get_parent()
+	if not c is Chunk or c.tiles.size() != 1:
+		return false
+	var vr := Chunk.validate(d.tiles + c.tiles)
+	if not vr["ok"] and not vr.get("neuter_bad", false) and mode != "career":
+		_toast(vr.get("msg", "That ending doesn't fit there."))
+		return false
+	if was_loose:
+		c = _take_loose(t)
+	return _stem_onto(d, c)
 
 
 ## Holding an ending and clicking on a stem (on the bench, or lying loose in the
@@ -5958,6 +6032,8 @@ func _demo() -> void:
 	if "--reelview" in OS.get_cmdline_user_args(): # screenshot: prism endings up close (one turned to the ablative -ā)
 		var ab := _new_chunk([_new_tile("stem", "silv"), _new_ending("decl1", "ā")], Vector3(-0.55, TABLE_Y, 0.62))
 		_refresh(ab)
+		var pu := _new_chunk([_new_tile("stem", "puer")], Vector3(-0.1, TABLE_Y, 0.66))
+		_refresh(pu)
 		if "--midturn" in OS.get_cmdline_user_args(): # (frozen halfway between two faces)
 			var pr: Tile = made[0].tiles[1]
 			pr.reel_pos = pr.choice + 0.5
@@ -7353,6 +7429,49 @@ func _self_test() -> void:
 	var corner := Vector3(WING_IN - 0.2, TABLE_Y, WING_Z0 + 0.3) # (the near left corner of the L)
 	print("T77 the computer's cable reaches the near left corner: ", _on_leash(disp_cord, corner).distance_to(corner) < 0.01,
 			"  (", snappedf(Vector2(disp_cord.anchor().x - corner.x, disp_cord.anchor().z - corner.z).length(), 0.01), " m from the computer)")
+	# stems go onto endings too: brought up to an ending's left end, or clicked onto one
+	_clear_player_words()
+	for lc: Chunk in chunks.duplicate(): # (and stray endings left from earlier tests)
+		if lc.tiles.all(func(x): return x.kind != "stem"):
+			_discard(lc)
+	await get_tree().create_timer(0.5).timeout
+	var sa := _new_chunk([_new_tile("stem", "puell")], Vector3(-0.9, TABLE_Y, 0.5))
+	var ea := _new_ending("decl1", "am")
+	var eac := _new_chunk([ea], Vector3(-0.1, TABLE_Y, 0.5))
+	_refresh(sa)
+	_refresh(eac)
+	await get_tree().create_timer(0.3).timeout
+	_grab(sa.tiles[0])
+	var lend: Vector3 = ea.global_transform * Vector3(-ea.width * 0.5, 0, 0)
+	for x9 in [0.3, 0.15, 0.06, 0.02, 0.0]:
+		if dragging == null:
+			break
+		var held := dragging
+		var st9: Tile = held.tiles.back()
+		var tip9: Vector3 = st9.global_transform * Vector3(st9.width * 0.5, 0, 0)
+		var wp9: Vector3 = held.global_transform * grab_local + (lend - Vector3(x9, 0, 0) - tip9)
+		hold_dist = camera.global_position.distance_to(wp9)
+		_drag_to(_screen(wp9))
+		for f in 10:
+			await get_tree().process_frame
+	var brought: bool = ea.get_parent() is Chunk and (ea.get_parent() as Chunk).tiles.size() == 2 and (ea.get_parent() as Chunk).tiles[0].key == "puell"
+	if dragging:
+		_release()
+	var sb := _new_chunk([_new_tile("stem", "serv")], Vector3(-0.9, TABLE_Y, 0.2))
+	var eb := _new_ending("decl2", "um")
+	var ebc := _new_chunk([eb], Vector3(0.3, TABLE_Y, 0.25))
+	_refresh(sb)
+	_refresh(ebc)
+	await get_tree().create_timer(0.3).timeout
+	_grab(sb.tiles[0])
+	for f in 4:
+		await get_tree().process_frame
+	drag_mouse = _screen(eb.global_position)
+	_release()
+	await get_tree().create_timer(0.6).timeout
+	var clicked: bool = eb.get_parent() is Chunk and (eb.get_parent() as Chunk).tiles.size() == 2 and (eb.get_parent() as Chunk).tiles[0].key == "serv"
+	print("T78 stems onto endings: puell- brought to -am: ", brought, "  serv- clicked onto -um: ", clicked, " (", (eb.get_parent() as Chunk).analysis.get("latin", "?") if eb.get_parent() is Chunk else "?", ")",
+			"   singular plug: a flat square ", Cord.prong_section(1), " x ", Cord.PRONG_L_SG)
 	# the three sorts of game: what's on the board at the start of each
 	var boards := {}
 	for m9 in ["tutorial", "learn", "career"]:

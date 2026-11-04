@@ -12,7 +12,7 @@ extends Node3D
 ## cable leaves from the back (+x). Plugged in, the plug frame == the socket frame.
 
 const PRONG_L := 0.035 # plural blades and the square acc prong
-const PRONG_L_SG := 0.055 # the singular blade is longer...
+const PRONG_L_SG := 0.03 # the singular blade: a wide flat square (nothing like the computer's round plug)
 const PRONG_H := 0.012
 const PRONG_T := 0.004
 const ACC_PRONG := 0.03 # side of the square acc prong
@@ -79,9 +79,9 @@ static func prong_z(n: int) -> Array:
 
 
 ## Cross-section (y, z) of one blade: plural blades stand upright, the singular
-## blade lies flat (sideways) and is wider.
+## blade lies flat and is wide: a flat square.
 static func prong_section(n: int) -> Vector3:
-	return Vector3(0, PRONG_H, PRONG_T) if n == 2 else Vector3(0, PRONG_T, PRONG_H + 0.004)
+	return Vector3(0, PRONG_H, PRONG_T) if n == 2 else Vector3(0, 0.005, 0.03)
 
 
 ## How far the prongs stick out (= how deep they go in).
