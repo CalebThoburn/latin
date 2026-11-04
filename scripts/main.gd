@@ -5958,6 +5958,11 @@ func _demo() -> void:
 	if "--reelview" in OS.get_cmdline_user_args(): # screenshot: prism endings up close (one turned to the ablative -ā)
 		var ab := _new_chunk([_new_tile("stem", "silv"), _new_ending("decl1", "ā")], Vector3(-0.55, TABLE_Y, 0.62))
 		_refresh(ab)
+		if "--midturn" in OS.get_cmdline_user_args(): # (frozen halfway between two faces)
+			var pr: Tile = made[0].tiles[1]
+			pr.reel_pos = pr.choice + 0.5
+			pr.reel_goal = pr.reel_pos
+			pr._layout_reel()
 		var mid: Vector3 = made[0].tiles[1].global_position
 		player = Vector3(mid.x + 0.05, 0, mid.z + 0.45)
 		yaw = 0.0

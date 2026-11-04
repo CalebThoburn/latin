@@ -1017,10 +1017,29 @@ func _build_prism(cx: float, plen: float) -> void:
 		if k < reel_opts.size() and long_opt(o): # a long ablative: a macron on its face
 			var bar := Art.box(facet, Vector3((plen - REEL_PORTS) * 0.6, 0.002, 0.004), Vector3(tx, a + 0.001, 0), INK_REEL, -1)
 			bar.set_meta("macron", k)
-		if k < reel_opts.size() and Latin.has_case(cat, Latin.reel_form(reel_base, o), "nom"): # the hole its subject cable comes out of
-			var hn := 2 if (cat == "decl5" and Latin.reel_form(reel_base, o) == "es") else 1
+		if k >= reel_opts.size():
+			continue
+		var form := Latin.reel_form(reel_base, o)
+		if Latin.has_case(cat, form, "nom"): # its subject cable: tucked away in a port hole (you can see it in there)
+			var hn := 2 if (cat == "decl5" and form == "es") else 1
 			for j in hn:
-				Art.box(facet, Vector3(0.011, 0.001, 0.011), Vector3(_cable_x(j, hn), a + 0.0006, 0), COL_HOLE, -1)
+				var hx := _cable_x(j, hn)
+				Art.box(facet, Vector3(0.015, 0.0008, 0.013), Vector3(hx, a + 0.0004, 0), COL_HOLE, -1)
+				Art.box(facet, Vector3(0.0095, 0.0009, 0.0075), Vector3(hx, a + 0.0007, 0), Cord.COL["nom"], -1) # (the plug, inside)
+				Art.box(facet, Vector3(0.002, 0.001, 0.005), Vector3(hx + 0.0025, a + 0.0009, 0), Color("#d4dae0"), -1)
+		# its port (square: accusative; triangle: ablative), always there on its face
+		# (the face that's up has the working one, made with the piece's links)
+		if k != choice:
+			var port_kind := ""
+			if Latin.has_case(cat, form, "acc") and cat != "neut":
+				port_kind = "acc"
+			elif Latin.has_case(cat, form, "abl"):
+				port_kind = "abl"
+			if port_kind == "acc":
+				Art.box(facet, Vector3(Cord.ACC_PRONG + 0.006, 0.0008, Cord.ACC_PRONG + 0.006), Vector3(_port_x(), a + 0.0005, 0), COL_HOLE, -1)
+			elif port_kind == "abl":
+				var tm := Art.mesh(facet, Cord.tri_prism(Cord.TRI_R + 0.003, 0.002), Vector3(_port_x(), a + 0.0003, 0), COL_HOLE, -1, 1.0, true)
+				tm.basis = Basis(Vector3.UP, Vector3.LEFT, Vector3.BACK)
 		for side in [-1.0, 1.0]: # thin rails along the face's edges
 			var ang := PI / n
 			var e := Vector3(0, a, side * a * tan(ang))
