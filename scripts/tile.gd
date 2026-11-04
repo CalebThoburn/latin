@@ -648,8 +648,8 @@ func _build_block() -> void:
 	if w_win > 0.0: # the housing round the prism: a box (a bit taller than the board) with a window in its top
 		var hx := width * 0.5 - REEL_END - w_win * 0.5
 		var dims := _reel_dims()
-		var hh: float = dims[2]
-		var yc: float = dims[1]
+		var hh: float = H # (flat: the same height as the board)
+		var yc := 0.0
 		var fw: float = dims[3] # (the window: as wide as one face)
 		var wall := (D - fw) * 0.5
 		for sz in [-1.0, 1.0]:
@@ -936,10 +936,13 @@ func port_open() -> bool:
 ## The prism's size: [corner radius, centre height, housing height, face width]. Its
 ## faces are wide enough to read; the housing's bottom is level with the board's.
 func _reel_dims() -> Array:
+	# (a little impossible: the prism is bigger than the flat box it turns in. Its top
+	# face is level with the board's top, and only the faces near the top are ever
+	# drawn, so none of it shows outside the box.)
 	var n := maxi(3, reel_opts.size())
-	var r := maxf(H * 0.5 - 0.0012, REEL_FACE / (2.0 * sin(PI / n)))
-	var hh := 2.0 * (r + 0.0012)
-	return [r, -H * 0.5 + hh * 0.5, hh, 2.0 * r * sin(PI / n)]
+	var r := REEL_FACE / (2.0 * sin(PI / n))
+	var a := r * cos(PI / n)
+	return [r, H * 0.5 - a, H, 2.0 * r * sin(PI / n)]
 
 
 var reel_yc := 0.0 # the prism's centre height
@@ -989,18 +992,19 @@ func _build_prism(cx: float, plen: float) -> void:
 	var a: float = dims[0] * cos(PI / n) # (it turns inside its housing: its corners just clear the walls)
 	reel_a = a
 	reel_yc = dims[1]
-	reel_top = dims[1] + dims[2] * 0.5
+	reel_top = H * 0.5
 	reel_node = Node3D.new()
 	reel_node.position = Vector3(cx, reel_yc, 0)
 	add_child(reel_node)
 	reel_facets = []
-	var pm := Art.mesh(reel_node, _prism_mesh(n, a, plen), Vector3.ZERO, COL_REEL, 0, 0.6)
-	mats.append(pm.material_override)
+	var fw: float = 2.0 * dims[0] * sin(PI / n)
 	for k in n:
 		var facet := Node3D.new() # (its +y is this face's outward normal)
 		facet.rotation.x = TAU * k / n
 		reel_node.add_child(facet)
 		reel_facets.append(facet)
+		var plate := Art.box(facet, Vector3(plen, 0.003, fw), Vector3(0, a - 0.0015, 0), COL_REEL, 0, 0.6)
+		mats.append(plate.material_override)
 		var o: String = reel_opts[k] if k < reel_opts.size() else "~"
 		var tx := -plen * 0.5 + 0.008 + (plen - REEL_PORTS - 0.008) * 0.5 # (the letters: the left part of the face)
 		var lab := Art.label3d("", FACE_FONT, PIXEL)
@@ -1061,6 +1065,8 @@ func _layout_reel() -> void:
 	if reel_node == null:
 		return
 	reel_node.rotation.x = -reel_pos * TAU / reel_n
+	for k in reel_facets.size(): # only the faces turned toward the window are there (the rest would be outside the box)
+		reel_facets[k].visible = cos(TAU * k / reel_n - reel_pos * TAU / reel_n) > 0.4
 	for k in reel_labels.size():
 		var lab: Label3D = reel_labels[k]
 		if k >= reel_opts.size():
